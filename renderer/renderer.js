@@ -10,6 +10,7 @@ let activeSnapshot  = null // null = current; number = viewing that snapshot
 let comments        = []
 let pendingQuote    = ''
 let paletteIndex    = 0
+let paletteResults  = []
 let isDiffMode      = false
 let stepSections    = []
 let stepIndex       = 0
@@ -167,28 +168,29 @@ function closePalette() {
 function renderPaletteList() {
   paletteList.innerHTML = ''
   const q = paletteInput.value.trim().toLowerCase()
-  let results
 
   if (q) {
-    results = allPlans.filter(p =>
+    paletteResults = allPlans.filter(p =>
       p.title.toLowerCase().includes(q)    ||
       p.repo.toLowerCase().includes(q)     ||
       p.summary?.toLowerCase().includes(q) ||
       p.trigger?.toLowerCase().includes(q)
     )
   } else {
-    results = [...allPlans]
+    paletteResults = [...allPlans]
       .sort((a, b) => new Date(b.modified) - new Date(a.modified))
       .slice(0, 12)
   }
 
-  if (!results.length) {
+  if (paletteIndex >= paletteResults.length) paletteIndex = Math.max(0, paletteResults.length - 1)
+
+  if (!paletteResults.length) {
     paletteList.innerHTML = '<li class="palette-empty">No plans found</li>'
     return
   }
 
   let lastRepo = null
-  results.forEach((plan, i) => {
+  paletteResults.forEach((plan, i) => {
     if (plan.repo !== lastRepo) {
       const group = document.createElement('li')
       group.className = 'palette-group-label'
@@ -198,37 +200,46 @@ function renderPaletteList() {
     }
     const li = document.createElement('li')
     li.className = 'palette-item' + (i === paletteIndex ? ' palette-active' : '')
+    li.dataset.index = String(i)
     li.innerHTML = `
       <span class="palette-icon">□</span>
       <span class="palette-item-title">${escapeHtml(plan.title)}</span>
       <span class="palette-item-meta">${plan.versionCount ? `v${plan.versionCount + 1} · ` : ''}${formatRelativeDate(plan.modified)}</span>`
     li.addEventListener('mouseenter', () => {
       paletteIndex = i
-      paletteList.querySelectorAll('.palette-item').forEach((el, j) =>
-        el.classList.toggle('palette-active', j === i)
-      )
+      updatePaletteActive()
     })
-    li.addEventListener('click', () => { openPlan(plan); closePalette() })
+    li.addEventListener('click', () => openPaletteResult(i))
     paletteList.appendChild(li)
   })
+}
+
+function updatePaletteActive() {
+  const items = paletteList.querySelectorAll('.palette-item')
+  items.forEach(el => el.classList.toggle('palette-active', Number(el.dataset.index) === paletteIndex))
+  paletteList.querySelector(`.palette-item[data-index="${paletteIndex}"]`)?.scrollIntoView({ block: 'nearest' })
+}
+
+function openPaletteResult(index = paletteIndex) {
+  const plan = paletteResults[index]
+  if (!plan) return
+  openPlan(plan)
+  closePalette()
 }
 
 paletteInput.addEventListener('input', () => { paletteIndex = 0; renderPaletteList() })
 
 paletteInput.addEventListener('keydown', e => {
-  const items = paletteList.querySelectorAll('.palette-item')
   if (e.key === 'ArrowDown') {
     e.preventDefault()
-    paletteIndex = Math.min(paletteIndex + 1, items.length - 1)
-    items.forEach((el, i) => el.classList.toggle('palette-active', i === paletteIndex))
-    items[paletteIndex]?.scrollIntoView({ block: 'nearest' })
+    paletteIndex = Math.min(paletteIndex + 1, paletteResults.length - 1)
+    updatePaletteActive()
   } else if (e.key === 'ArrowUp') {
     e.preventDefault()
     paletteIndex = Math.max(paletteIndex - 1, 0)
-    items.forEach((el, i) => el.classList.toggle('palette-active', i === paletteIndex))
-    items[paletteIndex]?.scrollIntoView({ block: 'nearest' })
+    updatePaletteActive()
   } else if (e.key === 'Enter') {
-    items[paletteIndex]?.click()
+    openPaletteResult()
   } else if (e.key === 'Escape') {
     closePalette()
   }
