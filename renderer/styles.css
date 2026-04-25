@@ -1416,7 +1416,20 @@ body {
 }
 
 #main-area::before,
-#main-area::after { display: none; }
+#main-area::after {
+  display: block;
+  height: 7px;
+  background-size: 18px 7px;
+  opacity: 0.95;
+}
+
+#main-area::before {
+  background-image: radial-gradient(circle at 50% 0%, #f2f2f4 5px, transparent 5.5px);
+}
+
+#main-area::after {
+  background-image: radial-gradient(circle at 50% 100%, #f2f2f4 5px, transparent 5.5px);
+}
 
 #empty-state {
   border-radius: 16px;
