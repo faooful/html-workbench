@@ -69,6 +69,7 @@ const panelToggleBtn      = document.getElementById('panel-toggle-btn')
 const contextPanel        = document.getElementById('context-panel')
 const contextCodeTab      = document.getElementById('context-code-tab')
 const contextChangesTab   = document.getElementById('context-changes-tab')
+const contextCloseBtn     = document.getElementById('context-close-btn')
 const codeContext         = document.getElementById('code-context')
 const changesContext      = document.getElementById('changes-context')
 const fileChipRow         = document.getElementById('file-chip-row')
@@ -625,7 +626,7 @@ function setPanel(open, panel = activePanel) {
   activePanel = panel
   contextPanel.classList.toggle('hidden', !panelOpen)
   panelToggleBtn.classList.toggle('panel-open', panelOpen)
-  panelToggleBtn.textContent = activePanel === 'code' ? 'Code' : 'Changes'
+  panelToggleBtn.textContent = 'Inspector'
   renderContextPanel()
 }
 
@@ -637,7 +638,7 @@ function renderContextPanel() {
   contextChangesTab.classList.toggle('active', activePanel === 'changes')
   codeContext.classList.toggle('hidden', activePanel !== 'code')
   changesContext.classList.toggle('hidden', activePanel !== 'changes')
-  panelToggleBtn.textContent = activePanel === 'code' ? 'Code' : 'Changes'
+  panelToggleBtn.textContent = 'Inspector'
   if (activePanel === 'code') renderCodePanel()
   else renderChangesPanel()
 }
@@ -783,6 +784,7 @@ function renderUnifiedDiff(oldContent, newContent) {
 panelToggleBtn.addEventListener('click', () => setPanel(!panelOpen, activePanel))
 contextCodeTab.addEventListener('click', () => setPanel(true, 'code'))
 contextChangesTab.addEventListener('click', () => setPanel(true, 'changes'))
+contextCloseBtn.addEventListener('click', () => setPanel(false))
 
 // ── Copy dropdown ─────────────────────────────────────────────────────────────
 
