@@ -1505,6 +1505,7 @@ body {
   min-height: 0;
   overflow: hidden;
   border-top: none;
+  background: var(--bg-surface);
 }
 
 #content-main {
@@ -1529,7 +1530,7 @@ body {
   width: 178px;
   padding: 34px 18px 32px 14px;
   border-left: none;
-  background: rgba(255, 255, 255, 0.40);
+  background: transparent;
 }
 
 #context-panel {
