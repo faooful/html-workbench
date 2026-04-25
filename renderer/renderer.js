@@ -32,8 +32,6 @@ const collapsedGroups = {}
 
 const tabStrip            = document.getElementById('tab-strip')
 const tabNewBtn           = document.getElementById('tab-new-btn')
-const chromeSearchBtn     = document.getElementById('chrome-search-btn')
-const chromeSearchLabel   = document.getElementById('chrome-search-label')
 const emptyState          = document.getElementById('empty-state')
 const workspaceShell      = document.getElementById('workspace-shell')
 const planHeader          = document.getElementById('plan-header')
@@ -103,7 +101,6 @@ if (window.WEB_MODE) {
   // Show sharing URL in sidebar footer
   window.planAPI.getSharingInfo?.().then(info => {
     if (!info?.url) return
-    document.getElementById('share-url-text').textContent = info.url
     document.getElementById('share-widget').classList.remove('hidden')
   })
   document.getElementById('share-copy-btn')?.addEventListener('click', () => {
@@ -509,7 +506,6 @@ function closeTab(filename) {
       emptyState.classList.remove('hidden')
       panelToggleBtn.classList.add('hidden')
       contextPanel.classList.add('hidden')
-      if (chromeSearchLabel) chromeSearchLabel.textContent = 'Open a plan'
     }
   }
   renderTabs()
@@ -520,7 +516,6 @@ function renderList() {
 }
 
 tabNewBtn?.addEventListener('click', openPalette)
-chromeSearchBtn?.addEventListener('click', openPalette)
 
 // ── Plan open ─────────────────────────────────────────────────────────────────
 
@@ -568,8 +563,6 @@ async function openPlan(plan, opts = {}) {
 
   docTitle.textContent = plan.title
   docDate.textContent  = `${plan.repo}  ·  ${formatDate(plan.modified)}  ·  ~${words.toLocaleString()} words  ·  ${mins} min read`
-  if (chromeSearchLabel) chromeSearchLabel.textContent = `${plan.repo} — ${plan.title}`
-
   renderPreview()
 
   snapshots = await window.planAPI.getSnapshots(plan.filename)

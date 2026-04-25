@@ -1203,6 +1203,7 @@ body {
   position: relative;
   display: flex;
   align-items: center;
+  gap: 10px;
   padding: 0 18px 0 0;
   flex-shrink: 0;
   -webkit-app-region: drag;
@@ -1210,6 +1211,8 @@ body {
 
 #chrome-window-spacer {
   height: 100%;
+  width: 112px;
+  flex: 0 0 112px;
 }
 
 #chrome-title {
@@ -1226,107 +1229,84 @@ body {
   letter-spacing: -0.1px;
 }
 
-#chrome-search-btn {
-  height: 25px;
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(360px, calc(100% - 320px));
-  min-width: 0;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 7px;
-  border: 1px solid rgba(0,0,0,0.10);
-  border-radius: 7px;
-  background: rgba(255,255,255,0.62);
-  color: var(--text-muted);
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 0 8px;
-  box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset;
-  cursor: pointer;
-  -webkit-app-region: no-drag;
-}
-
-#chrome-search-btn:hover {
-  background: rgba(255,255,255,0.86);
-  color: var(--text-dim);
-}
-
-.chrome-search-icon {
-  font-size: 13px;
-  line-height: 1;
-  opacity: 0.8;
-}
-
-#chrome-search-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-}
-
-#chrome-search-btn kbd {
-  color: var(--text-muted);
-  font: 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  opacity: 0.85;
-}
-
 #tab-cluster {
   min-width: 0;
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 10px;
   -webkit-app-region: no-drag;
 }
 
 #tab-strip {
   min-width: 0;
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   overflow: hidden;
 }
 
 .plan-tab {
-  height: 30px;
-  min-width: 112px;
-  max-width: 236px;
+  height: 31px;
+  min-width: 108px;
+  max-width: 260px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: 7px;
-  padding: 0 8px 0 10px;
+  column-gap: 9px;
+  padding: 0 8px 0 6px;
   border: 1px solid transparent;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.56);
+  border-radius: 7px;
+  background: transparent;
   color: var(--text-muted);
   font-family: inherit;
   cursor: pointer;
-  box-shadow: 0 1px 0 rgba(255,255,255,0.72) inset;
+  box-shadow: none;
   transition: background 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s;
 }
 
 .plan-tab:hover {
-  background: rgba(255,255,255,0.86);
+  background: rgba(255,255,255,0.58);
   color: var(--text);
-  border-color: var(--border);
+  border-color: rgba(0,0,0,0.06);
 }
 
 .plan-tab.active {
   background: var(--bg-surface);
   color: var(--text);
   border-color: var(--border-medium);
-  box-shadow: 0 1px 8px rgba(0,0,0,0.06), 0 1px 0 rgba(255,255,255,0.85) inset;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.10), 0 1px 0 rgba(255,255,255,0.85) inset;
 }
 
 .tab-status {
-  width: 8px;
+  position: relative;
+  width: 22px;
+  height: 22px;
   display: flex;
   align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  background: #050505;
+  color: white;
+}
+
+.tab-status::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  display: block;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg width='12' height='12' viewBox='0 0 13 13' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.8 7.7L8.2 4.3' stroke='black' stroke-width='1.4' stroke-linecap='round'/%3E%3Cpath d='M5.3 3.5l.6-.6a2.3 2.3 0 013.2 3.2l-.6.6M7.7 9.5l-.6.6a2.3 2.3 0 01-3.2-3.2l.6-.6' stroke='black' stroke-width='1.3' stroke-linecap='round' fill='none'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg width='12' height='12' viewBox='0 0 13 13' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.8 7.7L8.2 4.3' stroke='black' stroke-width='1.4' stroke-linecap='round'/%3E%3Cpath d='M5.3 3.5l.6-.6a2.3 2.3 0 013.2 3.2l-.6.6M7.7 9.5l-.6.6a2.3 2.3 0 01-3.2-3.2l.6-.6' stroke='black' stroke-width='1.3' stroke-linecap='round' fill='none'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.tab-status .live-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  margin: 15px 0 0 15px;
+  border: 1px solid var(--bg-surface);
 }
 
 .tab-title {
@@ -1334,7 +1314,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -1357,51 +1337,75 @@ body {
 .tab-close:hover { background: var(--item-hover); color: var(--text); }
 
 #tab-new-btn {
-  width: 30px;
-  height: 30px;
+  width: auto;
+  height: 28px;
   border: 1px solid transparent;
-  border-radius: 8px;
-  background: rgba(255,255,255,0.54);
-  color: var(--text-muted);
-  font-size: 18px;
-  line-height: 1;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 650;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   cursor: pointer;
   flex-shrink: 0;
 }
 
+.tab-new-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+#tab-new-btn kbd {
+  color: var(--text-muted);
+  font: 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  opacity: 0.85;
+}
+
 #tab-new-btn:hover {
-  background: var(--bg-surface);
-  border-color: var(--border);
+  background: rgba(255,255,255,0.58);
+  border-color: rgba(0,0,0,0.06);
   color: var(--text);
 }
 
 #chrome-actions {
   margin-left: auto;
   min-width: 0;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
   -webkit-app-region: no-drag;
 }
 
-.chrome-icon-btn {
-  width: 28px;
+.chrome-icon-btn,
+.chrome-action-btn {
   height: 26px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   border: 1px solid rgba(0,0,0,0.10);
   border-radius: 7px;
   background: rgba(255,255,255,0.62);
   color: var(--text-dim);
-  font: 16px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  padding: 0;
+  font: 600 12px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  padding: 0 9px;
   cursor: pointer;
   box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset;
 }
 
-.chrome-icon-btn:hover {
+.chrome-icon-btn {
+  width: 28px;
+  padding: 0;
+  font-size: 16px;
+}
+
+.chrome-icon-btn:hover,
+.chrome-action-btn:hover {
   background: rgba(255,255,255,0.86);
   color: var(--text);
 }
@@ -1409,7 +1413,6 @@ body {
 #share-widget {
   padding: 0;
   border: none;
-  min-width: 190px;
 }
 
 #workspace-shell {
@@ -1824,8 +1827,13 @@ body {
     padding-left: 0;
   }
 
-  #chrome-search-btn {
-    width: min(340px, calc(100% - 250px));
+  #chrome-window-spacer {
+    width: 108px;
+    flex-basis: 108px;
+  }
+
+  .plan-tab {
+    max-width: 220px;
   }
 
   #doc-content,
@@ -1854,17 +1862,21 @@ body {
   #chrome-bar {
     height: 36px;
     padding: 0;
+    gap: 6px;
   }
 
-  #chrome-search-btn {
-    left: 78px;
-    right: 40px;
-    width: auto;
-    transform: none;
+  #chrome-window-spacer {
+    width: 78px;
+    flex-basis: 78px;
+  }
+
+  #chrome-actions {
+    gap: 5px;
   }
 
   .plan-tab {
-    max-width: 190px;
+    min-width: 92px;
+    max-width: 150px;
   }
 
   #plan-header {
