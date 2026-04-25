@@ -616,22 +616,23 @@ body {
   flex: 1;
   display: flex;
   flex-direction: row;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
 }
+#viewer-body::-webkit-scrollbar { width: 6px; }
+#viewer-body::-webkit-scrollbar-track { background: transparent; }
+#viewer-body::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
 
 /* ── Preview (markdown body) ── */
 
 #doc-content {
   flex: 1;
-  overflow-y: auto;
+  overflow: visible;
   padding: 32px 52px 48px;
   max-width: 860px;
   width: 100%;
 }
-#doc-content::-webkit-scrollbar { width: 6px; }
-#doc-content::-webkit-scrollbar-track { background: transparent; }
-#doc-content::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
 
 /* ── TOC panel ── */
 
@@ -639,7 +640,11 @@ body {
   width: 164px;
   flex-shrink: 0;
   padding: 32px 16px 32px 20px;
-  overflow-y: auto;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  max-height: 100%;
+  overflow: hidden;
 }
 #toc-panel::-webkit-scrollbar { width: 4px; }
 #toc-panel::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 2px; }

@@ -50,6 +50,7 @@ const versionBanner       = document.getElementById('version-banner')
 const liveBar             = document.getElementById('live-bar')
 const liveDismissBtn      = document.getElementById('live-dismiss-btn')
 const viewer              = document.getElementById('viewer')
+const viewerBody          = document.getElementById('viewer-body')
 const docContent          = document.getElementById('doc-content')
 const commentAddBtn       = document.getElementById('comment-add-btn')
 const commentBubble       = document.getElementById('comment-bubble')
@@ -592,7 +593,7 @@ async function openPlan(plan, opts = {}) {
   placeSwitcherIndicator(false)
   persistPrefs()
 
-  docContent.scrollTop = 0
+  viewerBody.scrollTop = 0
 }
 
 // ── Preview ───────────────────────────────────────────────────────────────────
@@ -882,7 +883,7 @@ function buildToc() {
 function updateTocActive() {
   const headings = [...docContent.querySelectorAll('h1[id], h2[id], h3[id]')]
   if (!headings.length) return
-  const containerTop = docContent.getBoundingClientRect().top
+  const containerTop = viewerBody.getBoundingClientRect().top
   let active = headings[0]
   for (const h of headings) {
     if (h.getBoundingClientRect().top - containerTop <= 72) active = h
@@ -892,14 +893,14 @@ function updateTocActive() {
   )
 }
 
-docContent.addEventListener('scroll', updateTocActive)
+viewerBody.addEventListener('scroll', updateTocActive)
 
 docContent.addEventListener('click', e => {
   if (e.target.classList.contains('plan-context-toggle')) {
-    const prev = docContent.scrollTop
+    const prev = viewerBody.scrollTop
     triggerExpanded = !triggerExpanded
     applyCommentHighlights()
-    docContent.scrollTop = prev
+    viewerBody.scrollTop = prev
   }
 })
 
