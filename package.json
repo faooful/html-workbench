@@ -1,0 +1,21 @@
+{
+  "name": "plan-viewer",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "bundle": "esbuild scripts/bundle-diffs.js --bundle --format=iife --global-name=PierreDiffs --platform=browser --outfile=renderer/pierre-diffs.bundle.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "chokidar": "^5.0.0",
+    "electron": "^41.3.0"
+  },
+  "devDependencies": {
+    "@pierre/diffs": "latest",
+    "esbuild": "latest"
+  }
+}

@@ -1,0 +1,16 @@
+node_modules/
+.DS_Store
+
+# Local runtime state
+.live-plans.json
+.prefs.json
+
+# Synced/generated plan data
+plans/*.md
+plans/*.comments.json
+plans/.snapshots/
+
+# Electron/package artifacts
+dist/
+out/
+*.log
