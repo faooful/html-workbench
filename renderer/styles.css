@@ -1188,17 +1188,16 @@ body {
 
 #app {
   flex-direction: column;
-  padding: 0 12px 12px;
-  gap: 10px;
+  padding: 0 12px 10px;
+  gap: 6px;
   background: #f2f2f4;
 }
 
 #chrome-bar {
-  height: 40px;
-  display: grid;
-  grid-template-columns: 190px minmax(220px, 360px) 1fr;
+  height: 36px;
+  position: relative;
+  display: flex;
   align-items: center;
-  gap: 12px;
   padding: 0 18px 0 0;
   flex-shrink: 0;
   -webkit-app-region: drag;
@@ -1224,6 +1223,10 @@ body {
 
 #chrome-search-btn {
   height: 25px;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(360px, calc(100% - 320px));
   min-width: 0;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -1368,6 +1371,7 @@ body {
 }
 
 #chrome-actions {
+  margin-left: auto;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -1774,8 +1778,11 @@ body {
 
 @media (max-width: 1280px) {
   #chrome-bar {
-    grid-template-columns: 88px minmax(220px, 360px) 1fr;
     padding-left: 0;
+  }
+
+  #chrome-search-btn {
+    width: min(340px, calc(100% - 250px));
   }
 
   #toc-panel {
@@ -1800,9 +1807,15 @@ body {
   }
 
   #chrome-bar {
-    height: 40px;
-    grid-template-columns: 78px minmax(0, 1fr) auto;
+    height: 36px;
     padding: 0;
+  }
+
+  #chrome-search-btn {
+    left: 78px;
+    right: 40px;
+    width: auto;
+    transform: none;
   }
 
   .plan-tab {
