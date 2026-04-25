@@ -35,6 +35,7 @@ const tabNewBtn           = document.getElementById('tab-new-btn')
 const chromeSearchBtn     = document.getElementById('chrome-search-btn')
 const chromeSearchLabel   = document.getElementById('chrome-search-label')
 const emptyState          = document.getElementById('empty-state')
+const contentShell        = document.getElementById('content-shell')
 const planHeader          = document.getElementById('plan-header')
 const docTitle            = document.getElementById('doc-title')
 const docDate             = document.getElementById('doc-date')
@@ -633,6 +634,7 @@ async function loadPlanReferences() {
 function setPanel(open, panel = activePanel) {
   panelOpen = open
   activePanel = panel
+  contentShell.classList.toggle('inspector-open', panelOpen)
   contextPanel.classList.toggle('hidden', !panelOpen)
   panelToggleBtn.classList.toggle('panel-open', panelOpen)
   panelToggleBtn.textContent = '◫'
@@ -641,6 +643,7 @@ function setPanel(open, panel = activePanel) {
 
 function renderContextPanel() {
   if (!activePlan) return
+  contentShell.classList.toggle('inspector-open', panelOpen)
   contextPanel.classList.toggle('hidden', !panelOpen)
   panelToggleBtn.classList.toggle('panel-open', panelOpen)
   contextCodeTab.classList.toggle('active', activePanel === 'code')
