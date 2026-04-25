@@ -10,17 +10,20 @@
 <body>
 <div id="app">
 
-  <aside id="sidebar">
-    <div id="sidebar-header">
-      <h1>Plans</h1>
-      <input id="search" type="text" placeholder="Search..." autocomplete="off" spellcheck="false" />
+  <div id="chrome-bar">
+    <div id="chrome-title">
+      <span class="chrome-back">‹</span>
+      <span class="chrome-crumb">Plans</span>
     </div>
-    <ul id="plan-list"></ul>
-    <div id="share-widget" class="hidden">
+    <div id="tab-strip"></div>
+    <button id="tab-new-btn" title="Open plan">+</button>
+    <div id="chrome-actions">
+      <div id="share-widget" class="hidden">
       <span id="share-url-text"></span>
       <button id="share-copy-btn" class="btn-ghost">Copy link</button>
+      </div>
     </div>
-  </aside>
+  </div>
 
   <div id="main-area">
 
@@ -67,6 +70,7 @@
           </button>
         </div>
         <button id="diff-btn" class="btn-ghost hidden">Diff</button>
+        <button id="panel-toggle-btn" class="btn-ghost hidden">Code</button>
         <button id="send-btn" class="btn-send hidden">Send to Claude</button>
       </div>
     </div>
@@ -78,28 +82,47 @@
       <button id="live-dismiss-btn">Dismiss</button>
     </div>
 
-    <div id="viewer" class="hidden">
-      <div id="viewer-body">
-        <article id="doc-content" class="markdown-body"></article>
-        <nav id="toc-panel" class="hidden">
-          <div class="toc-label">On this page</div>
-          <ul id="toc-list"></ul>
-        </nav>
-        <div id="diff-panel" class="hidden"></div>
-      </div>
-    </div>
+    <div id="content-shell">
+      <div id="content-main">
+        <div id="viewer" class="hidden">
+          <div id="viewer-body">
+            <article id="doc-content" class="markdown-body"></article>
+            <nav id="toc-panel" class="hidden">
+              <div class="toc-label">On this page</div>
+              <ul id="toc-list"></ul>
+            </nav>
+            <div id="diff-panel" class="hidden"></div>
+          </div>
+        </div>
 
-    <div id="step-panel" class="hidden">
-      <div id="step-nav"></div>
-      <div id="step-body">
-        <article id="step-content" class="markdown-body"></article>
+        <div id="step-panel" class="hidden">
+          <div id="step-nav"></div>
+          <div id="step-body">
+            <article id="step-content" class="markdown-body"></article>
+          </div>
+          <div id="step-footer">
+            <button id="step-prev-btn" class="btn-ghost" disabled>← Previous</button>
+            <span id="step-meta"></span>
+            <button id="step-next-btn" class="btn-send">Next →</button>
+          </div>
+        </div>
       </div>
-      <div id="step-footer">
-        <button id="step-prev-btn" class="btn-ghost" disabled>← Previous</button>
-        <span id="step-meta"></span>
-        <button id="step-next-btn" class="btn-send">Next →</button>
+
+      <aside id="context-panel" class="hidden">
+        <div id="context-tabs">
+          <button id="context-code-tab" class="context-tab active">Code</button>
+          <button id="context-changes-tab" class="context-tab">Changes</button>
+        </div>
+        <div id="code-context" class="context-view">
+          <div id="file-chip-row"></div>
+          <div id="file-preview"></div>
+        </div>
+        <div id="changes-context" class="context-view hidden">
+          <div id="changes-toolbar"></div>
+          <div id="semantic-diff-list"></div>
+        </div>
+      </aside>
       </div>
-    </div>
 
   </div>
 </div>
@@ -128,7 +151,7 @@
 <div id="palette" class="hidden">
   <div id="palette-backdrop"></div>
   <div id="palette-card">
-    <input id="palette-input" placeholder="Open plan…" autocomplete="off" spellcheck="false" />
+    <input id="palette-input" placeholder="Search plans…" autocomplete="off" spellcheck="false" />
     <ul id="palette-list"></ul>
   </div>
 </div>

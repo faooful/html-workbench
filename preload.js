@@ -11,6 +11,10 @@ contextBridge.exposeInMainWorld('planAPI', {
   setLastPlan:         (filename)        => ipcRenderer.invoke('set-last-plan', filename),
   getSnapshots:        (filename)        => ipcRenderer.invoke('get-snapshots', filename),
   getSnapshotContent:  (filename, ts)    => ipcRenderer.invoke('get-snapshot-content', filename, ts),
+  getPlanReferences:   (filename)        => ipcRenderer.invoke('get-plan-references', filename),
+  getReferencedFile:   (filename, path)  => ipcRenderer.invoke('get-referenced-file', filename, path),
+  getPrefs:            ()                => ipcRenderer.invoke('get-prefs'),
+  setPrefs:            (prefs)           => ipcRenderer.invoke('set-prefs', prefs),
   onPlanUpdated:       (cb)              => ipcRenderer.on('plan:updated', (_, data) => cb(data)),
   getSharingInfo:      ()                => ipcRenderer.invoke('get-sharing-info'),
 })

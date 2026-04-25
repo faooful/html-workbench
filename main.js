@@ -163,6 +163,19 @@ function startSharingServer() {
       return
     }
 
+    // ── Plan references ──
+    const refsMatch = pathname.match(/^\/api\/plans\/([^/]+)\/references$/)
+    if (refsMatch && req.method === 'GET') {
+      const filename = decodeURIComponent(refsMatch[1])
+      const refPath = url.searchParams.get('path')
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(refPath
+        ? getReferencedFile(filename, refPath)
+        : extractPlanReferences(filename)
+      ))
+      return
+    }
+
     // ── Snapshot content ──
     const snapContentMatch = pathname.match(/^\/api\/snapshots\/([^/]+)\/(\d+)$/)
     if (snapContentMatch && req.method === 'GET') {
@@ -267,10 +280,24 @@ function extractTrigger(lines, stem) {
   return null
 }
 
+function extractProjectRoot(lines) {
+  for (const line of lines) {
+    let entry
+    try { entry = JSON.parse(line) } catch (_) { continue }
+    if (entry.cwd && typeof entry.cwd === 'string' && fs.existsSync(entry.cwd)) {
+      try {
+        if (fs.statSync(entry.cwd).isDirectory()) return entry.cwd
+      } catch (_) {}
+    }
+  }
+  return null
+}
+
 function buildPlanMeta(planFilenames) {
   const repoMap    = {}
   const triggerMap = {}
-  if (!fs.existsSync(PROJECTS_DIR)) return { repoMap, triggerMap }
+  const rootMap    = {}
+  if (!fs.existsSync(PROJECTS_DIR)) return { repoMap, triggerMap, rootMap }
 
   const planStems = planFilenames.map(f => f.replace('.md', ''))
   const matches   = []
@@ -301,10 +328,84 @@ function buildPlanMeta(planFilenames) {
 
     if (candidates.length) {
       triggerMap[stem + '.md'] = extractTrigger(candidates[0].lines, stem)
+      rootMap[stem + '.md']    = extractProjectRoot(candidates[0].lines)
     }
   }
 
-  return { repoMap, triggerMap }
+  return { repoMap, triggerMap, rootMap }
+}
+
+function getPlanContent(filename) {
+  const filepath = path.join(VIEWER_PLANS_DIR, filename)
+  if (!fs.existsSync(filepath)) return null
+  return fs.readFileSync(filepath, 'utf8')
+}
+
+function extractPlanReferences(filename) {
+  const content = getPlanContent(filename)
+  if (!content) return []
+  if (!planMetaCache) {
+    const files = fs.readdirSync(VIEWER_PLANS_DIR).filter(f => f.endsWith('.md'))
+    planMetaCache = buildPlanMeta(files)
+  }
+
+  const root = planMetaCache.rootMap?.[filename] || null
+  const found = new Map()
+  const patterns = [
+    /`([^`\n]+\.(?:js|jsx|ts|tsx|css|html|json|md|mjs|cjs))`/g,
+    /(?:File|Path|Modified|New|Update|Create):\s*`?([^`\n|]+?\.(?:js|jsx|ts|tsx|css|html|json|md|mjs|cjs))`?/gi,
+    /(?:^|\s)([A-Za-z0-9_./~-]+\/[A-Za-z0-9_./~-]+\.(?:js|jsx|ts|tsx|css|html|json|md|mjs|cjs))/gm,
+  ]
+
+  for (const re of patterns) {
+    let match
+    while ((match = re.exec(content))) {
+      const raw = (match[1] || '').trim().replace(/[),.;:]+$/g, '')
+      if (!raw || raw.includes('://') || raw.length > 240) continue
+      if (raw.startsWith('~/.')) continue
+      const key = raw.replace(/^\.\//, '')
+      if (found.has(key)) continue
+      const resolved = resolveReferencePath(root, key)
+      found.set(key, {
+        path: key,
+        exists: !!resolved,
+        root,
+        size: resolved ? fs.statSync(resolved).size : null,
+      })
+    }
+  }
+
+  return [...found.values()].slice(0, 30)
+}
+
+function resolveReferencePath(root, refPath) {
+  if (!root || !refPath) return null
+  const candidate = path.resolve(root, refPath)
+  const normalizedRoot = path.resolve(root)
+  if (candidate !== normalizedRoot && !candidate.startsWith(normalizedRoot + path.sep)) return null
+  try {
+    if (!fs.existsSync(candidate) || !fs.statSync(candidate).isFile()) return null
+    return candidate
+  } catch (_) {
+    return null
+  }
+}
+
+function getReferencedFile(filename, refPath) {
+  if (!planMetaCache) {
+    const files = fs.readdirSync(VIEWER_PLANS_DIR).filter(f => f.endsWith('.md'))
+    planMetaCache = buildPlanMeta(files)
+  }
+  const root = planMetaCache.rootMap?.[filename] || null
+  const resolved = resolveReferencePath(root, refPath)
+  if (!resolved) return null
+  try {
+    const stat = fs.statSync(resolved)
+    if (stat.size > 250000) return { path: refPath, root, truncated: true, content: '' }
+    return { path: refPath, root, truncated: false, content: fs.readFileSync(resolved, 'utf8') }
+  } catch (_) {
+    return null
+  }
 }
 
 // ── Plans API ─────────────────────────────────────────────────────────────────
@@ -404,9 +505,7 @@ function createWindow() {
 ipcMain.handle('get-plans', () => getPlans())
 
 ipcMain.handle('get-plan-content', (_, filename) => {
-  const filepath = path.join(VIEWER_PLANS_DIR, filename)
-  if (!fs.existsSync(filepath)) return null
-  return fs.readFileSync(filepath, 'utf8')
+  return getPlanContent(filename)
 })
 
 ipcMain.handle('save-plan', (_, filename, content) => {
@@ -464,6 +563,23 @@ ipcMain.handle('set-last-plan', (_, filename) => {
   return true
 })
 
+ipcMain.handle('get-prefs', () => {
+  try {
+    if (fs.existsSync(PREFS_FILE)) return JSON.parse(fs.readFileSync(PREFS_FILE, 'utf8'))
+  } catch (_) {}
+  return {}
+})
+
+ipcMain.handle('set-prefs', (_, nextPrefs) => {
+  try {
+    const prefs = fs.existsSync(PREFS_FILE)
+      ? JSON.parse(fs.readFileSync(PREFS_FILE, 'utf8'))
+      : {}
+    fs.writeFileSync(PREFS_FILE, JSON.stringify({ ...prefs, ...nextPrefs }, null, 2), 'utf8')
+  } catch (_) {}
+  return true
+})
+
 ipcMain.handle('get-snapshots', (_, filename) => getSnapshotTimestamps(filename))
 
 ipcMain.handle('get-sharing-info', () => ({
@@ -475,6 +591,9 @@ ipcMain.handle('get-snapshot-content', (_, filename, ts) => {
   const p = path.join(SNAPSHOTS_DIR, filename.replace('.md', ''), `${ts}.md`)
   return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null
 })
+
+ipcMain.handle('get-plan-references', (_, filename) => extractPlanReferences(filename))
+ipcMain.handle('get-referenced-file', (_, filename, refPath) => getReferencedFile(filename, refPath))
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 

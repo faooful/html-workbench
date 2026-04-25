@@ -36,6 +36,25 @@ window.planAPI = {
   getSnapshotContent: (f, ts) =>
     fetch(`/api/snapshots/${encodeURIComponent(f)}/${ts}`).then(r => r.ok ? r.text() : null),
 
+  getPlanReferences: f =>
+    fetch(`/api/plans/${encodeURIComponent(f)}/references`).then(r => r.json()).catch(() => []),
+
+  getReferencedFile: (f, path) =>
+    fetch(`/api/plans/${encodeURIComponent(f)}/references?path=${encodeURIComponent(path)}`)
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null),
+
+  getPrefs: () => Promise.resolve({
+    lastPlan: localStorage.getItem('pv_last') || null,
+    openTabs: JSON.parse(localStorage.getItem('pv_open_tabs') || '[]'),
+  }),
+
+  setPrefs: prefs => {
+    if (prefs.lastPlan) localStorage.setItem('pv_last', prefs.lastPlan)
+    if (Array.isArray(prefs.openTabs)) localStorage.setItem('pv_open_tabs', JSON.stringify(prefs.openTabs))
+    return Promise.resolve(true)
+  },
+
   onPlanUpdated: cb => {
     const connect = () => {
       const es = new EventSource('/api/events')
