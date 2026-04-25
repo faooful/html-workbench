@@ -3,6 +3,7 @@ const path = require('path')
 const fs = require('fs')
 const os = require('os')
 const http = require('http')
+const crypto = require('crypto')
 const chokidar = require('chokidar')
 
 const SHARE_PORT = 3847
@@ -11,11 +12,14 @@ let sharingServerUrl = null
 let sharingServerReady = false
 
 const CLAUDE_PLANS_DIR = path.join(os.homedir(), '.claude', 'plans')  // source
+const CODEX_SESSIONS_DIR = path.join(os.homedir(), '.codex', 'sessions')
 const VIEWER_PLANS_DIR = path.join(__dirname, 'plans')                  // local archive
 const SNAPSHOTS_DIR    = path.join(VIEWER_PLANS_DIR, '.snapshots')      // version history
 const PROJECTS_DIR     = path.join(os.homedir(), '.claude', 'projects')
+const CLAUDE_TASKS_DIR  = path.join(os.homedir(), '.claude', 'tasks')
 const LIVE_STATE_FILE  = path.join(__dirname, '.live-plans.json')
 const PREFS_FILE       = path.join(__dirname, '.prefs.json')
+const SOURCES_FILE     = path.join(VIEWER_PLANS_DIR, '.sources.json')
 
 let mainWindow
 let planMetaCache = null
@@ -60,6 +64,11 @@ function broadcastSSE(data) {
   for (const client of [...sseClients]) {
     try { client.write(msg) } catch (_) { sseClients.delete(client) }
   }
+}
+
+function broadcastPlanUpdate(data = {}) {
+  mainWindow?.webContents.send('plan:updated', data)
+  broadcastSSE(data)
 }
 
 function serveFile(res, filepath, contentType) {
@@ -229,7 +238,13 @@ function getSnapshotTimestamps(filename) {
 // ── Plan sync ─────────────────────────────────────────────────────────────────
 
 function syncPlans() {
-  if (!fs.existsSync(CLAUDE_PLANS_DIR)) return
+  syncClaudePlans()
+  syncCodexPlans()
+}
+
+function syncClaudePlans() {
+  if (!fs.existsSync(CLAUDE_PLANS_DIR)) return []
+  const synced = []
   for (const file of fs.readdirSync(CLAUDE_PLANS_DIR)) {
     if (!file.endsWith('.md')) continue
     const src  = path.join(CLAUDE_PLANS_DIR, file)
@@ -237,9 +252,171 @@ function syncPlans() {
     try {
       if (!fs.existsSync(dest) || fs.statSync(src).mtimeMs > fs.statSync(dest).mtimeMs) {
         fs.copyFileSync(src, dest)
+        synced.push(file)
       }
     } catch (_) {}
   }
+  const sources = loadSourceMeta()
+  for (const file of synced) {
+    sources[file] = {
+      source: 'claude',
+      sourcePath: path.join(CLAUDE_PLANS_DIR, file),
+      sourceId: file,
+      createdAt: sources[file]?.createdAt || new Date().toISOString(),
+    }
+  }
+  saveSourceMeta(sources)
+  return synced
+}
+
+function syncCodexPlans() {
+  if (!fs.existsSync(CODEX_SESSIONS_DIR)) return []
+  const sources = loadSourceMeta()
+  const imported = []
+  for (const sessionPath of walkFiles(CODEX_SESSIONS_DIR, f => f.endsWith('.jsonl'))) {
+    for (const plan of extractCodexPlans(sessionPath)) {
+      const filename = codexPlanFilename(plan.sourceId, plan.content)
+      const dest = path.join(VIEWER_PLANS_DIR, filename)
+      const markdown = codexPlanMarkdown(plan)
+      try {
+        if (!fs.existsSync(dest) || fs.readFileSync(dest, 'utf8') !== markdown) {
+          if (fs.existsSync(dest)) saveSnapshot(filename, fs.readFileSync(dest, 'utf8'))
+          fs.writeFileSync(dest, markdown, 'utf8')
+          imported.push(filename)
+        }
+        sources[filename] = {
+          source: 'codex',
+          sourcePath: sessionPath,
+          sourceId: plan.sourceId,
+          createdAt: sources[filename]?.createdAt || plan.createdAt,
+        }
+      } catch (_) {}
+    }
+  }
+  saveSourceMeta(sources)
+  return imported
+}
+
+function loadSourceMeta() {
+  try {
+    if (fs.existsSync(SOURCES_FILE)) return JSON.parse(fs.readFileSync(SOURCES_FILE, 'utf8'))
+  } catch (_) {}
+  return {}
+}
+
+function saveSourceMeta(sources) {
+  try {
+    fs.writeFileSync(SOURCES_FILE, JSON.stringify(sources, null, 2), 'utf8')
+  } catch (_) {}
+}
+
+function walkFiles(root, filter) {
+  const out = []
+  const stack = [root]
+  while (stack.length) {
+    const current = stack.pop()
+    let entries
+    try { entries = fs.readdirSync(current, { withFileTypes: true }) } catch (_) { continue }
+    for (const entry of entries) {
+      const full = path.join(current, entry.name)
+      if (entry.isDirectory()) stack.push(full)
+      else if (!filter || filter(full)) out.push(full)
+    }
+  }
+  return out
+}
+
+function extractCodexPlans(sessionPath) {
+  const plans = []
+  let sessionId = path.basename(sessionPath, '.jsonl')
+  let cwd = null
+  let repo = null
+  let planIndex = 0
+  try {
+    const lines = fs.readFileSync(sessionPath, 'utf8').split('\n').filter(Boolean)
+    for (const line of lines) {
+      let entry
+      try { entry = JSON.parse(line) } catch (_) { continue }
+      const meta = entry.payload
+      if (entry.type === 'session_meta' && meta) {
+        sessionId = meta.id || sessionId
+        cwd = meta.cwd || cwd
+        repo = meta.git?.repository_url ? repoFromGitUrl(meta.git.repository_url) : repo
+      }
+      if (entry.type !== 'response_item' || entry.payload?.type !== 'message' || entry.payload?.role !== 'assistant') {
+        continue
+      }
+      for (const text of collectText(entry.payload.content)) {
+        const re = /<proposed_plan>\s*([\s\S]*?)\s*<\/proposed_plan>/g
+        let match
+        while ((match = re.exec(text))) {
+          const content = match[1].trim()
+          if (!content) continue
+          const sourceId = `${sessionId}:${planIndex++}:${hashText(content).slice(0, 12)}`
+          plans.push({
+            content,
+            sourceId,
+            sourcePath: sessionPath,
+            createdAt: entry.timestamp || new Date().toISOString(),
+            cwd,
+            repo: repo || repoFromPath(cwd) || 'Codex',
+          })
+        }
+      }
+    }
+  } catch (_) {}
+  return plans
+}
+
+function collectText(value, out = []) {
+  if (!value) return out
+  if (typeof value === 'string') {
+    if (value.includes('<proposed_plan>')) out.push(value)
+    return out
+  }
+  if (Array.isArray(value)) {
+    value.forEach(v => collectText(v, out))
+    return out
+  }
+  if (typeof value === 'object') {
+    Object.values(value).forEach(v => collectText(v, out))
+  }
+  return out
+}
+
+function codexPlanFilename(sourceId, content) {
+  return `codex-${hashText(`${sourceId}\n${content}`).slice(0, 16)}.md`
+}
+
+function codexPlanMarkdown(plan) {
+  const title = plan.content.match(/^#\s+(.+)$/m)?.[1]?.trim() || 'Codex Plan'
+  const meta = [
+    `Source: Codex`,
+    plan.repo ? `Repo: ${plan.repo}` : null,
+    plan.cwd ? `Cwd: ${plan.cwd}` : null,
+    `Created: ${plan.createdAt}`,
+    `Source ID: ${plan.sourceId}`,
+  ].filter(Boolean).join('\n')
+  return `# ${title}\n\n<!-- plan-viewer-source\n${meta}\n-->\n\n${plan.content.replace(/^#\s+.+\n?/, '').trim()}\n`
+}
+
+function hashText(text) {
+  return crypto.createHash('sha1').update(text).digest('hex')
+}
+
+function repoFromGitUrl(url) {
+  const match = String(url || '').match(/[:/]([^/:]+\/[^/]+?)(?:\.git)?$/)
+  return match ? match[1] : null
+}
+
+function repoFromPath(dir) {
+  if (!dir) return null
+  const parts = path.resolve(dir).split(path.sep).filter(Boolean)
+  const githubIdx = parts.indexOf('github.com')
+  if (githubIdx >= 0 && parts[githubIdx + 1] && parts[githubIdx + 2]) {
+    return `${parts[githubIdx + 1]}/${parts[githubIdx + 2]}`
+  }
+  return parts[parts.length - 1] || null
 }
 
 // ── Title / repo helpers ──────────────────────────────────────────────────────
@@ -311,7 +488,24 @@ function buildPlanMeta(planFilenames) {
   const repoMap    = {}
   const triggerMap = {}
   const rootMap    = {}
-  if (!fs.existsSync(PROJECTS_DIR)) return { repoMap, triggerMap, rootMap }
+  const sourceMap  = {}
+  const statusMap  = {}
+  const sourceMeta = loadSourceMeta()
+  const taskIndex  = loadClaudeTasks()
+
+  for (const filename of planFilenames) {
+    const content = getPlanContent(filename) || ''
+    const embedded = extractEmbeddedPlanMeta(content)
+    sourceMap[filename] = sourceMeta[filename]?.source || (filename.startsWith('codex-') ? 'codex' : 'archive')
+    if (sourceMap[filename] === 'archive' && fs.existsSync(path.join(CLAUDE_PLANS_DIR, filename))) {
+      sourceMap[filename] = 'claude'
+    }
+    if (embedded.repo) repoMap[filename] = embedded.repo
+    if (embedded.cwd) rootMap[filename] = embedded.cwd
+    statusMap[filename] = inferPlanStatus(filename, content, taskIndex)
+  }
+
+  if (!fs.existsSync(PROJECTS_DIR)) return { repoMap, triggerMap, rootMap, sourceMap, statusMap }
 
   const planStems = planFilenames.map(f => f.replace('.md', ''))
   const matches   = []
@@ -336,17 +530,68 @@ function buildPlanMeta(planFilenames) {
       .filter(m => m.mentioned.includes(stem))
       .sort((a, b) => a.mentioned.length - b.mentioned.length)
 
-    repoMap[stem + '.md'] = candidates.length
+    const filename = stem + '.md'
+    repoMap[filename] = repoMap[filename] || (candidates.length
       ? decodeProjectFolder(candidates[0].proj)
-      : 'Uncategorized'
+      : 'Uncategorized')
 
     if (candidates.length) {
-      triggerMap[stem + '.md'] = extractTrigger(candidates[0].lines, stem)
-      rootMap[stem + '.md']    = extractProjectRoot(candidates[0].lines)
+      triggerMap[filename] = extractTrigger(candidates[0].lines, stem)
+      rootMap[filename]    = rootMap[filename] || extractProjectRoot(candidates[0].lines)
     }
   }
 
-  return { repoMap, triggerMap, rootMap }
+  return { repoMap, triggerMap, rootMap, sourceMap, statusMap }
+}
+
+function extractEmbeddedPlanMeta(content) {
+  const block = content.match(/<!-- plan-viewer-source\s*([\s\S]*?)\s*-->/)
+  if (!block) return {}
+  const meta = {}
+  for (const line of block[1].split('\n')) {
+    const [rawKey, ...rest] = line.split(':')
+    const key = rawKey.trim().toLowerCase()
+    const value = rest.join(':').trim()
+    if (key === 'repo') meta.repo = value
+    if (key === 'cwd' && value && fs.existsSync(value)) meta.cwd = value
+  }
+  return meta
+}
+
+function loadClaudeTasks() {
+  const tasks = []
+  if (!fs.existsSync(CLAUDE_TASKS_DIR)) return tasks
+  for (const file of walkFiles(CLAUDE_TASKS_DIR, f => f.endsWith('.json'))) {
+    try {
+      const task = JSON.parse(fs.readFileSync(file, 'utf8'))
+      const subject = String(task.subject || '').trim()
+      const description = String(task.description || '').trim()
+      const haystack = `${subject}\n${description}`.toLowerCase()
+      if (!subject && !description) continue
+      tasks.push({
+        subject,
+        description,
+        haystack,
+        status: String(task.status || '').toLowerCase(),
+      })
+    } catch (_) {}
+  }
+  return tasks
+}
+
+function inferPlanStatus(filename, content, tasks) {
+  if (livePlans.has(filename)) return 'needs_review'
+  const normalized = `${extractTitle(content, filename)}\n${content}`.toLowerCase()
+  const matches = tasks.filter(task => {
+    if (task.subject && task.subject.length > 8 && normalized.includes(task.subject.toLowerCase())) return true
+    const fileMatch = task.description.match(/[A-Za-z0-9_./~-]+\.(?:js|jsx|ts|tsx|css|html|json|md|mjs|cjs)/)
+    if (fileMatch && normalized.includes(fileMatch[0].toLowerCase())) return true
+    return false
+  })
+  if (!matches.length) return 'reviewed'
+  if (matches.some(t => t.status === 'in_progress')) return 'in_progress'
+  if (matches.every(t => t.status === 'completed')) return 'implemented'
+  return 'reviewed'
 }
 
 function getPlanContent(filename) {
@@ -442,6 +687,8 @@ function getPlans() {
         repo:         planMetaCache.repoMap[filename]    || 'Uncategorized',
         trigger:      planMetaCache.triggerMap[filename] || null,
         live:         livePlans.has(filename),
+        source:       planMetaCache.sourceMap[filename]  || 'archive',
+        status:       planMetaCache.statusMap[filename]  || (livePlans.has(filename) ? 'needs_review' : 'reviewed'),
         versionCount: getSnapshotTimestamps(filename).length,
         summary:      content
           .replace(/^#.+$/gm, '')
@@ -484,12 +731,19 @@ function createWindow() {
     watcher.on('add', filepath => {
       const filename = path.basename(filepath)
       try { fs.copyFileSync(filepath, path.join(VIEWER_PLANS_DIR, filename)) } catch (_) {}
+      const sources = loadSourceMeta()
+      sources[filename] = {
+        source: 'claude',
+        sourcePath: filepath,
+        sourceId: filename,
+        createdAt: sources[filename]?.createdAt || new Date().toISOString(),
+      }
+      saveSourceMeta(sources)
       livePlans.add(filename)
       saveLiveState()
       updateDockBadge()
       planMetaCache = null
-      mainWindow?.webContents.send('plan:updated', { live: filename })
-      broadcastSSE({ live: filename })
+      broadcastPlanUpdate({ live: filename })
     })
 
     watcher.on('change', filepath => {
@@ -508,9 +762,43 @@ function createWindow() {
       livePlans.add(filename)
       saveLiveState()
       updateDockBadge()
-      mainWindow?.webContents.send('plan:updated', { live: filename })
-      broadcastSSE({ live: filename })
+      planMetaCache = null
+      broadcastPlanUpdate({ live: filename })
     })
+  }
+
+  if (fs.existsSync(CODEX_SESSIONS_DIR)) {
+    const watcher = chokidar.watch(CODEX_SESSIONS_DIR, {
+      ignoreInitial: true,
+      awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
+    })
+
+    const onCodexSessionChange = () => {
+      const imported = syncCodexPlans()
+      for (const filename of imported) livePlans.add(filename)
+      if (imported.length) {
+        saveLiveState()
+        updateDockBadge()
+      }
+      planMetaCache = null
+      broadcastPlanUpdate(imported.length ? { live: imported[0] } : {})
+    }
+
+    watcher.on('add', onCodexSessionChange)
+    watcher.on('change', onCodexSessionChange)
+  }
+
+  if (fs.existsSync(CLAUDE_TASKS_DIR)) {
+    const watcher = chokidar.watch(CLAUDE_TASKS_DIR, {
+      ignoreInitial: true,
+      awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
+    })
+    const onTaskChange = () => {
+      planMetaCache = null
+      broadcastPlanUpdate({})
+    }
+    watcher.on('add', onTaskChange)
+    watcher.on('change', onTaskChange)
   }
 }
 

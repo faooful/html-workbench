@@ -464,11 +464,13 @@ function renderTabs() {
   for (const filename of openTabs) {
     const plan = planByFilename(filename)
     if (!plan) continue
+    const status = plan.status || (plan.live ? 'needs_review' : 'reviewed')
+    const statusLabel = statusLabelFor(status)
     const tab = document.createElement('button')
     tab.className = 'plan-tab' + (filename === activePlan ? ' active' : '') + (plan.live ? ' live-tab' : '')
     tab.title = plan.title
     tab.innerHTML = `
-      <span class="tab-status">${plan.live ? '<span class="live-dot"></span>' : ''}</span>
+      <span class="tab-status status-${escapeHtml(status)}" title="${escapeHtml(statusLabel)}" aria-label="${escapeHtml(statusLabel)}"></span>
       <span class="tab-title">${escapeHtml(plan.title)}</span>
       <span class="tab-meta">${escapeHtml(plan.repo)}</span>
       <span class="tab-close" title="Close">×</span>`
@@ -480,6 +482,15 @@ function renderTabs() {
     tabStrip.appendChild(tab)
   }
   persistPrefs()
+}
+
+function statusLabelFor(status) {
+  return {
+    needs_review: 'Needs review',
+    in_progress: 'In progress',
+    implemented: 'Implemented',
+    reviewed: 'Reviewed',
+  }[status] || 'Reviewed'
 }
 
 function closeTab(filename) {
