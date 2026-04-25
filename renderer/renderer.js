@@ -32,6 +32,8 @@ const collapsedGroups = {}
 
 const tabStrip            = document.getElementById('tab-strip')
 const tabNewBtn           = document.getElementById('tab-new-btn')
+const chromeSearchBtn     = document.getElementById('chrome-search-btn')
+const chromeSearchLabel   = document.getElementById('chrome-search-label')
 const emptyState          = document.getElementById('empty-state')
 const planHeader          = document.getElementById('plan-header')
 const docTitle            = document.getElementById('doc-title')
@@ -454,6 +456,10 @@ function ensureOpenTab(filename) {
 
 function renderTabs() {
   normalizeOpenTabs()
+  if (!tabStrip) {
+    persistPrefs()
+    return
+  }
   tabStrip.innerHTML = ''
 
   for (const filename of openTabs) {
@@ -501,6 +507,7 @@ function closeTab(filename) {
       emptyState.classList.remove('hidden')
       panelToggleBtn.classList.add('hidden')
       contextPanel.classList.add('hidden')
+      if (chromeSearchLabel) chromeSearchLabel.textContent = 'Open a plan'
     }
   }
   renderTabs()
@@ -510,7 +517,8 @@ function renderList() {
   renderTabs()
 }
 
-tabNewBtn.addEventListener('click', openPalette)
+tabNewBtn?.addEventListener('click', openPalette)
+chromeSearchBtn?.addEventListener('click', openPalette)
 
 // ── Plan open ─────────────────────────────────────────────────────────────────
 
@@ -558,6 +566,7 @@ async function openPlan(plan, opts = {}) {
 
   docTitle.textContent = plan.title
   docDate.textContent  = `${plan.repo}  ·  ${formatDate(plan.modified)}  ·  ~${words.toLocaleString()} words  ·  ${mins} min read`
+  if (chromeSearchLabel) chromeSearchLabel.textContent = `${plan.repo} — ${plan.title}`
 
   renderPreview()
 
@@ -626,7 +635,7 @@ function setPanel(open, panel = activePanel) {
   activePanel = panel
   contextPanel.classList.toggle('hidden', !panelOpen)
   panelToggleBtn.classList.toggle('panel-open', panelOpen)
-  panelToggleBtn.textContent = 'Inspector'
+  panelToggleBtn.textContent = '◫'
   renderContextPanel()
 }
 
@@ -638,7 +647,7 @@ function renderContextPanel() {
   contextChangesTab.classList.toggle('active', activePanel === 'changes')
   codeContext.classList.toggle('hidden', activePanel !== 'code')
   changesContext.classList.toggle('hidden', activePanel !== 'changes')
-  panelToggleBtn.textContent = 'Inspector'
+  panelToggleBtn.textContent = '◫'
   if (activePanel === 'code') renderCodePanel()
   else renderChangesPanel()
 }

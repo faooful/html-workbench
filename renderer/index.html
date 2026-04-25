@@ -11,18 +11,18 @@
 <div id="app">
 
   <div id="chrome-bar">
-    <div id="chrome-title">
-      <span class="chrome-crumb">Plan Viewer</span>
-    </div>
-    <div id="tab-cluster">
-      <div id="tab-strip"></div>
-      <button id="tab-new-btn" title="Open plan">+</button>
-    </div>
+    <div id="chrome-window-spacer"></div>
+    <button id="chrome-search-btn">
+      <span class="chrome-search-icon">⌕</span>
+      <span id="chrome-search-label">Open a plan</span>
+      <kbd>⌘K</kbd>
+    </button>
     <div id="chrome-actions">
       <div id="share-widget" class="hidden">
         <span id="share-url-text"></span>
         <button id="share-copy-btn" class="btn-ghost">Copy link</button>
       </div>
+      <button id="panel-toggle-btn" class="chrome-icon-btn hidden" title="Inspector">◫</button>
     </div>
   </div>
 
@@ -71,7 +71,6 @@
           </button>
         </div>
         <button id="diff-btn" class="btn-ghost hidden">Diff</button>
-        <button id="panel-toggle-btn" class="btn-ghost hidden">Inspector</button>
         <button id="send-btn" class="btn-send hidden">Send to Claude</button>
       </div>
     </div>
