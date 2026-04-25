@@ -1514,7 +1514,9 @@ body {
 
 #toc-panel {
   width: 178px;
-  padding-top: 34px;
+  padding: 34px 18px 32px 14px;
+  border-left: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.52);
 }
 
 #context-panel {
@@ -1785,14 +1787,16 @@ body {
     width: min(340px, calc(100% - 250px));
   }
 
-  #toc-panel {
-    display: none !important;
-  }
-
   #doc-content,
   #step-body {
     max-width: 760px;
     padding-right: 32px;
+  }
+}
+
+@media (max-width: 940px) {
+  #toc-panel {
+    display: none !important;
   }
 }
 

@@ -7,6 +7,8 @@ const chokidar = require('chokidar')
 
 const SHARE_PORT = 3847
 const sseClients = new Set()
+let sharingServerUrl = null
+let sharingServerReady = false
 
 const CLAUDE_PLANS_DIR = path.join(os.homedir(), '.claude', 'plans')  // source
 const VIEWER_PLANS_DIR = path.join(__dirname, 'plans')                  // local archive
@@ -189,8 +191,20 @@ function startSharingServer() {
     res.end()
   })
 
+  server.on('error', err => {
+    if (err.code === 'EADDRINUSE') {
+      sharingServerReady = false
+      sharingServerUrl = null
+      console.warn(`Plan Viewer sharing unavailable: port ${SHARE_PORT} is already in use`)
+      return
+    }
+    throw err
+  })
+
   server.listen(SHARE_PORT, '0.0.0.0', () => {
-    console.log(`Plan Viewer sharing: http://${getLocalIp()}:${SHARE_PORT}`)
+    sharingServerReady = true
+    sharingServerUrl = `http://${getLocalIp()}:${SHARE_PORT}`
+    console.log(`Plan Viewer sharing: ${sharingServerUrl}`)
   })
 }
 
@@ -583,8 +597,9 @@ ipcMain.handle('set-prefs', (_, nextPrefs) => {
 ipcMain.handle('get-snapshots', (_, filename) => getSnapshotTimestamps(filename))
 
 ipcMain.handle('get-sharing-info', () => ({
-  url:  `http://${getLocalIp()}:${SHARE_PORT}`,
+  url: sharingServerUrl,
   port: SHARE_PORT,
+  unavailable: !sharingServerReady,
 }))
 
 ipcMain.handle('get-snapshot-content', (_, filename, ts) => {
