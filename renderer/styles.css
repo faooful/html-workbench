@@ -1529,7 +1529,7 @@ body {
   width: 178px;
   padding: 34px 18px 32px 14px;
   border-left: none;
-  background: linear-gradient(90deg, rgba(0,0,0,0.035), rgba(0,0,0,0) 1px), rgba(255, 255, 255, 0.40);
+  background: rgba(255, 255, 255, 0.40);
 }
 
 #context-panel {
