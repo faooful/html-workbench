@@ -1410,9 +1410,9 @@ body {
 #main-area {
   margin: 0;
   min-height: 0;
-  border: 1px solid var(--border-medium);
+  border: none;
   border-radius: 14px;
-  box-shadow: 0 14px 34px rgba(0,0,0,0.08), 0 1px 0 rgba(255,255,255,0.85) inset;
+  box-shadow: 0 14px 34px rgba(0,0,0,0.08);
 }
 
 #main-area::before,
@@ -1504,7 +1504,7 @@ body {
   display: flex;
   min-height: 0;
   overflow: hidden;
-  border-top: 1px solid var(--border);
+  border-top: none;
 }
 
 #content-main {
@@ -1528,8 +1528,8 @@ body {
 #toc-panel {
   width: 178px;
   padding: 34px 18px 32px 14px;
-  border-left: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.52);
+  border-left: none;
+  background: linear-gradient(90deg, rgba(0,0,0,0.035), rgba(0,0,0,0) 1px), rgba(255, 255, 255, 0.40);
 }
 
 #context-panel {
