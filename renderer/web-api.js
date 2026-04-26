@@ -27,6 +27,11 @@ window.planAPI = {
       body:    JSON.stringify(comments),
     }).then(r => r.json()),
 
+  loadReview: f =>
+    fetch(`/api/plans/${encodeURIComponent(f)}/review`).then(r => r.json()).catch(() => null),
+
+  saveReview: () => Promise.resolve(false),
+
   getLastPlan:  ()  => Promise.resolve(localStorage.getItem('pv_last') || null),
   setLastPlan:  f   => { localStorage.setItem('pv_last', f); return Promise.resolve(true) },
 

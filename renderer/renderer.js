@@ -8,6 +8,7 @@ let triggerExpanded = false
 let snapshots       = []   // array of epoch-ms timestamps, oldest first
 let activeSnapshot  = null // null = current; number = viewing that snapshot
 let comments        = []
+let currentReview   = null
 let pendingQuote    = ''
 let paletteIndex    = 0
 let paletteResults  = []
@@ -50,8 +51,10 @@ const copyMenu            = document.getElementById('copy-menu')
 const copyMarkdownBtn     = document.getElementById('copy-markdown-btn')
 const copyTextBtn         = document.getElementById('copy-text-btn')
 const copyWithCommentsBtn = document.getElementById('copy-with-comments-btn')
+const approveBtn          = document.getElementById('approve-btn')
 const sendBtn             = document.getElementById('send-btn')
 const versionBanner       = document.getElementById('version-banner')
+const reviewBanner        = document.getElementById('review-banner')
 const liveBar             = document.getElementById('live-bar')
 const liveDismissBtn      = document.getElementById('live-dismiss-btn')
 const viewer              = document.getElementById('viewer')
@@ -65,6 +68,7 @@ const commentSaveBtn      = document.getElementById('comment-save-btn')
 const commentTooltip      = document.getElementById('comment-tooltip')
 const tooltipNote         = document.getElementById('tooltip-note')
 const tooltipDelete       = document.getElementById('tooltip-delete')
+const annotationType      = document.getElementById('annotation-type')
 const toastEl             = document.getElementById('toast')
 const tocPanel            = document.getElementById('toc-panel')
 const tocList             = document.getElementById('toc-list')
@@ -102,6 +106,7 @@ marked.setOptions({ gfm: true, breaks: false })
 
 if (window.WEB_MODE) {
   // Hide Electron-only controls
+  document.getElementById('approve-btn')?.classList.add('hidden')
   document.getElementById('send-btn')?.classList.add('hidden')
   document.getElementById('live-dismiss-btn')?.classList.add('hidden')
 } else {
@@ -254,6 +259,15 @@ function updatePaletteActive({ scroll = true } = {}) {
   }
 }
 
+function paletteItemFromPoint(clientX, clientY) {
+  const rect = paletteList.getBoundingClientRect()
+  if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null
+  return [...paletteList.querySelectorAll('.palette-item')].find(item => {
+    const itemRect = item.getBoundingClientRect()
+    return clientY >= itemRect.top && clientY <= itemRect.bottom
+  }) || null
+}
+
 function openPaletteResult(index = paletteIndex) {
   const plan = paletteResults[index]
   if (!plan) return
@@ -273,7 +287,7 @@ function schedulePaletteRender({ resetIndex = false } = {}) {
 paletteInput.addEventListener('input', () => schedulePaletteRender({ resetIndex: true }))
 
 function activatePaletteItemFromEvent(e) {
-  const item = e.target.closest?.('.palette-item')
+  const item = e.target.closest?.('.palette-item') || paletteItemFromPoint(e.clientX, e.clientY)
   if (!item || !paletteList.contains(item)) return
   const nextIndex = Number(item.dataset.index)
   if (!Number.isFinite(nextIndex) || nextIndex === paletteIndex) return
@@ -282,7 +296,7 @@ function activatePaletteItemFromEvent(e) {
 }
 
 function openPaletteItemFromEvent(e) {
-  const item = e.target.closest?.('.palette-item')
+  const item = e.target.closest?.('.palette-item') || paletteItemFromPoint(e.clientX, e.clientY)
   if (!item || !paletteList.contains(item)) return
   e.preventDefault()
   openPaletteResult(Number(item.dataset.index))
@@ -299,6 +313,25 @@ paletteList.addEventListener('pointerdown', e => {
 })
 
 paletteList.addEventListener('click', openPaletteItemFromEvent)
+
+document.addEventListener('mousemove', e => {
+  if (palette.classList.contains('hidden')) return
+  activatePaletteItemFromEvent(e)
+}, true)
+
+document.addEventListener('pointermove', e => {
+  if (palette.classList.contains('hidden')) return
+  activatePaletteItemFromEvent(e)
+}, true)
+
+document.addEventListener('pointerdown', e => {
+  if (palette.classList.contains('hidden') || e.button !== 0) return
+  const item = paletteItemFromPoint(e.clientX, e.clientY)
+  if (!item) return
+  e.preventDefault()
+  e.stopPropagation()
+  openPaletteResult(Number(item.dataset.index))
+}, true)
 
 paletteInput.addEventListener('keydown', e => {
   if (e.key === 'ArrowDown') {
@@ -512,17 +545,72 @@ stepNextBtn.addEventListener('click', () => {
 
 function buildFeedbackMessage() {
   if (comments.length === 0) {
-    return activeContent + '\n\n---\n\nThe plan looks good — please proceed with the implementation.'
+    return activeContent + '\n\n---\n\nApproved. Please proceed with the implementation.'
   }
-  let msg = 'I\'ve reviewed the plan. Please revise it based on my comments below, then present the updated plan for approval.\n\n'
+  let msg = 'I\'ve reviewed the plan. Please revise it based on the structured annotations below, then present the updated plan for approval.\n\n'
   msg += '---\n\n'
   msg += activeContent.trimEnd()
-  msg += '\n\n---\n\nComments:\n\n'
+  msg += '\n\n---\n\nAnnotations:\n\n'
   for (const c of comments) {
+    const type = annotationTypeLabel(c.type || 'comment')
     msg += `> "${c.quote.substring(0, 200)}${c.quote.length > 200 ? '…' : ''}"\n`
+    msg += `Type: ${type}\n`
     msg += `Note: ${c.note}\n\n`
   }
   return msg.trimEnd()
+}
+
+function annotationTypeLabel(type) {
+  return {
+    comment: 'Comment',
+    question: 'Question',
+    risk: 'Risk',
+    replace: 'Replace',
+    delete: 'Delete',
+    insert: 'Insert',
+  }[type] || 'Comment'
+}
+
+function reviewDecisionLabel(decision) {
+  return {
+    approved: 'Approved',
+    changes_requested: 'Changes requested',
+    dismissed: 'Dismissed',
+  }[decision] || 'Reviewed'
+}
+
+function buildReviewPayload(decision) {
+  return {
+    decision,
+    decidedAt: new Date().toISOString(),
+    annotationCount: comments.length,
+    annotations: comments.map(c => ({
+      id: c.id,
+      type: c.type || 'comment',
+      quote: c.quote,
+      note: c.note,
+      author: c.author || null,
+      timestamp: c.timestamp,
+    })),
+    summary: decision === 'approved'
+      ? 'Plan approved for implementation.'
+      : `Requested changes with ${comments.length} structured ${comments.length === 1 ? 'annotation' : 'annotations'}.`,
+    source: window.WEB_MODE ? 'web' : 'desktop',
+  }
+}
+
+function renderReviewBanner() {
+  if (!reviewBanner) return
+  reviewBanner.className = 'hidden'
+  reviewBanner.textContent = ''
+  if (!currentReview || allPlans.find(p => p.filename === activePlan)?.live) return
+
+  const decision = currentReview.decision || 'reviewed'
+  const count = Number(currentReview.annotationCount || currentReview.annotations?.length || 0)
+  const date = currentReview.decidedAt ? formatDate(currentReview.decidedAt) : 'previously'
+  reviewBanner.classList.remove('hidden')
+  reviewBanner.classList.add(decision === 'changes_requested' ? 'changes-requested' : decision)
+  reviewBanner.textContent = `${reviewDecisionLabel(decision)} ${date}${count ? ` · ${count} ${count === 1 ? 'annotation' : 'annotations'}` : ''}`
 }
 
 // ── Plan tabs ─────────────────────────────────────────────────────────────────
@@ -592,11 +680,13 @@ function closeTab(filename) {
       activeContent = ''
       activeTrigger = null
       comments = []
+      currentReview = null
       snapshots = []
       planHeader.classList.add('hidden')
       viewer.classList.add('hidden')
       stepPanel.classList.add('hidden')
       versionBanner.classList.add('hidden')
+      reviewBanner?.classList.add('hidden')
       liveBar.classList.add('hidden')
       emptyState.classList.remove('hidden')
       panelToggleBtn.classList.add('hidden')
@@ -622,11 +712,13 @@ async function openPlan(plan, opts = {}) {
   snapshots       = []
   activeSnapshot  = null
   comments        = []
+  currentReview   = null
   pendingQuote    = ''
   planReferences  = []
   activeRefPath   = null
   tocPanel.classList.add('hidden')
   versionBanner.classList.add('hidden')
+  reviewBanner?.classList.add('hidden')
   isDiffMode = false
   diffBtn.classList.add('hidden')
   diffBtn.textContent = 'Diff'
@@ -667,12 +759,15 @@ async function openPlan(plan, opts = {}) {
 
   const saved = await window.planAPI.loadComments(plan.filename)
   comments = saved || []
+  currentReview = await window.planAPI.loadReview?.(plan.filename).catch(() => null) || plan.review || null
   applyCommentHighlights()
 
   const isLive = plan.live
   liveBadge.classList.toggle('hidden', !isLive)
   liveBar.classList.toggle('hidden', !isLive)
+  approveBtn?.classList.toggle('hidden', !isLive)
   sendBtn.classList.toggle('hidden', !isLive)
+  renderReviewBanner()
   panelToggleBtn.classList.remove('hidden')
   diffBtn.classList.add('hidden')
 
@@ -721,6 +816,11 @@ async function loadPlanReferences() {
   activeRefPath = planReferences.find(r => r.exists)?.path || planReferences[0]?.path || null
 }
 
+function referenceRootLabel() {
+  const root = planReferences.find(r => r.root)?.root
+  return root ? `<br><span class="panel-empty-muted">Project root: ${escapeHtml(root)}</span>` : ''
+}
+
 function setPanel(open, panel = activePanel) {
   panelOpen = open
   activePanel = panel
@@ -748,7 +848,7 @@ function renderContextPanel() {
 function renderCodePanel() {
   fileChipRow.innerHTML = ''
   if (!planReferences.length) {
-    filePreview.innerHTML = '<div class="panel-empty">No referenced source files found in this plan.</div>'
+    filePreview.innerHTML = '<div class="panel-empty"><strong>No referenced source files found.</strong><br>This plan does not mention code paths that the inspector can safely preview.</div>'
     return
   }
 
@@ -764,6 +864,14 @@ function renderCodePanel() {
     })
     fileChipRow.appendChild(chip)
   }
+
+  const resolvedCount = planReferences.filter(ref => ref.exists).length
+  if (!resolvedCount) {
+    const count = planReferences.length
+    filePreview.innerHTML = `<div class="panel-empty"><strong>${count} possible ${count === 1 ? 'file was' : 'files were'} mentioned, but none resolved.</strong><br>The inspector only previews files inside the inferred project root. These chips are still useful as implementation clues, but no readable source file was found.${referenceRootLabel()}</div>`
+    return
+  }
+
   renderFilePreview(activeRefPath)
 }
 
@@ -774,7 +882,7 @@ async function renderFilePreview(refPath) {
   }
   const ref = planReferences.find(r => r.path === refPath)
   if (ref && !ref.exists) {
-    filePreview.innerHTML = `<div class="panel-empty"><strong>${escapeHtml(ref.path)}</strong><br>Could not resolve this file from the inferred project root.</div>`
+    filePreview.innerHTML = `<div class="panel-empty"><strong>${escapeHtml(ref.path)}</strong><br>Could not resolve this file inside the inferred project root.${referenceRootLabel()}</div>`
     return
   }
   filePreview.innerHTML = '<div class="panel-empty">Loading file…</div>'
@@ -1006,9 +1114,10 @@ let activeTooltipId = null
 function showTooltip(mark, comment) {
   clearTimeout(tooltipTimer)
   activeTooltipId = comment.id
+  const label = annotationTypeLabel(comment.type || 'comment')
   tooltipNote.textContent = comment.author
-    ? `${comment.author}: ${comment.note}`
-    : comment.note
+    ? `${label} · ${comment.author}: ${comment.note}`
+    : `${label}: ${comment.note}`
   tooltipDelete.dataset.id = comment.id
 
   const rect = mark.getBoundingClientRect()
@@ -1082,6 +1191,7 @@ commentAddBtn.addEventListener('click', e => {
   commentBubble.style.left = `${left}px`
   commentBubble.classList.remove('hidden')
   commentAddBtn.classList.add('hidden')
+  if (annotationType) annotationType.value = 'comment'
   commentInput.value = ''
   commentInput.focus()
 })
@@ -1169,6 +1279,7 @@ document.addEventListener('keydown', e => {
   commentBubble.style.left = `${left}px`
   commentBubble.classList.remove('hidden')
   commentAddBtn.classList.add('hidden')
+  if (annotationType) annotationType.value = 'comment'
   commentInput.value = ''
   commentInput.focus()
 })
@@ -1192,7 +1303,8 @@ async function saveComment() {
     }
   }
 
-  const comment = { id: uid(), quote: pendingQuote.substring(0, 300), note, timestamp: new Date().toISOString() }
+  const type = annotationType?.value || 'comment'
+  const comment = { id: uid(), type, quote: pendingQuote.substring(0, 300), note, timestamp: new Date().toISOString() }
   if (author) comment.author = author
   comments.push(comment)
   await window.planAPI.saveComments(activePlan, comments)
@@ -1201,7 +1313,11 @@ async function saveComment() {
   showToast('Comment added')
 }
 
-function highlightQuote(root, text, id) {
+function annotationClass(type) {
+  return `annotation-${String(type || 'comment').replace(/[^a-z_]/g, '')}`
+}
+
+function highlightQuote(root, text, id, type = 'comment') {
   if (!text) return
 
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -1242,7 +1358,7 @@ function highlightQuote(root, text, id) {
     range.setStart(n, from)
     range.setEnd(n, to)
     const mark = document.createElement('mark')
-    mark.className = 'comment-mark'
+    mark.className = `comment-mark ${annotationClass(type)}`
     mark.dataset.id = id
     try { range.surroundContents(mark) } catch (_) {}
   }
@@ -1252,7 +1368,7 @@ function applyCommentHighlights() {
   docContent.innerHTML = triggerBlock() + marked.parse(stripTitle(activeContent))
 
   for (const c of comments) {
-    highlightQuote(docContent, c.quote.substring(0, 200), c.id)
+    highlightQuote(docContent, c.quote.substring(0, 200), c.id, c.type || 'comment')
   }
 
   docContent.querySelectorAll('.comment-mark').forEach(mark => {
@@ -1267,31 +1383,47 @@ function applyCommentHighlights() {
 }
 
 liveDismissBtn.addEventListener('click', async () => {
+  currentReview = await window.planAPI.saveReview?.(activePlan, buildReviewPayload('dismissed')).catch(() => null) || null
   await window.planAPI.dismissLive(activePlan)
   const plan = allPlans.find(p => p.filename === activePlan)
   if (plan) plan.live = false
   liveBadge.classList.add('hidden')
   liveBar.classList.add('hidden')
+  approveBtn?.classList.add('hidden')
   sendBtn.classList.add('hidden')
   renderTabs()
+  renderReviewBanner()
 })
 
-// ── Send to Claude ────────────────────────────────────────────────────────────
+// ── Review decisions ──────────────────────────────────────────────────────────
 
-sendBtn.addEventListener('click', async () => {
-  navigator.clipboard.writeText(buildFeedbackMessage()).catch(() => {})
-
+async function completeLiveReview(plan, decision, toastMessage) {
+  currentReview = await window.planAPI.saveReview?.(activePlan, buildReviewPayload(decision)).catch(() => null) || null
   await window.planAPI.dismissLive(activePlan)
-  const plan = allPlans.find(p => p.filename === activePlan)
   if (plan) plan.live = false
   liveBadge.classList.add('hidden')
   liveBar.classList.add('hidden')
+  approveBtn?.classList.add('hidden')
   sendBtn.classList.add('hidden')
   renderTabs()
+  renderReviewBanner()
+  showToast(toastMessage, 4000)
+}
 
-  showToast(comments.length > 0
-    ? 'Feedback copied — paste it in Claude Code'
-    : 'Approval copied — paste it in Claude Code', 4000)
+approveBtn?.addEventListener('click', async () => {
+  const plan = allPlans.find(p => p.filename === activePlan)
+  navigator.clipboard.writeText(activeContent + '\n\n---\n\nApproved. Please proceed with the implementation.').catch(() => {})
+  await completeLiveReview(plan, 'approved', 'Approval copied — paste it in Claude Code')
+})
+
+sendBtn.addEventListener('click', async () => {
+  const plan = allPlans.find(p => p.filename === activePlan)
+  if (!comments.length) {
+    showToast('Add an annotation before requesting changes', 3000)
+    return
+  }
+  navigator.clipboard.writeText(buildFeedbackMessage()).catch(() => {})
+  await completeLiveReview(plan, 'changes_requested', 'Change request copied — paste it in Claude Code')
 })
 
 // ── Live updates ──────────────────────────────────────────────────────────────
@@ -1320,6 +1452,7 @@ function mergePlanUpdate(previous, next) {
     ...next,
     live: previous.live || next?.live,
     comments: previous.comments || next?.comments,
+    review: previous.review || next?.review,
   }
 }
 
@@ -1368,6 +1501,9 @@ async function refreshPlansFromUpdate() {
       const saved = await window.planAPI.loadComments(activePlan)
       comments = saved || []
       applyCommentHighlights()
+    } else if (data?.review === activePlan) {
+      currentReview = await window.planAPI.loadReview?.(activePlan).catch(() => null) || null
+      renderReviewBanner()
     }
   } finally {
     refreshInFlight = false

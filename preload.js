@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('planAPI', {
   dismissLive:    (filename)              => ipcRenderer.invoke('dismiss-live', filename),
   loadComments:   (filename)              => ipcRenderer.invoke('load-comments', filename),
   saveComments:   (filename, comments)    => ipcRenderer.invoke('save-comments', filename, comments),
+  loadReview:     (filename)              => ipcRenderer.invoke('load-review', filename),
+  saveReview:     (filename, review)      => ipcRenderer.invoke('save-review', filename, review),
   getLastPlan:         ()                => ipcRenderer.invoke('get-last-plan'),
   setLastPlan:         (filename)        => ipcRenderer.invoke('set-last-plan', filename),
   getSnapshots:        (filename)        => ipcRenderer.invoke('get-snapshots', filename),

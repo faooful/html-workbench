@@ -274,6 +274,27 @@ body {
   text-decoration: underline;
 }
 
+#review-banner {
+  padding: 8px 32px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--bg-subtle);
+  flex-shrink: 0;
+}
+
+#review-banner.approved {
+  color: var(--success);
+  background: var(--success-bg);
+  border-bottom-color: var(--live-border);
+}
+
+#review-banner.changes-requested {
+  color: var(--warning-text);
+  background: var(--warning-bg);
+  border-bottom-color: var(--warning-border);
+}
+
 /* Show-more button */
 .show-more-btn {
   display: block;
@@ -773,6 +794,11 @@ body {
   transition: background 0.12s;
 }
 .comment-mark:hover { background: rgba(255, 204, 0, 0.48); }
+.comment-mark.annotation-question { background: rgba(0, 122, 255, 0.13); border-bottom-color: rgba(0, 122, 255, 0.5); }
+.comment-mark.annotation-risk { background: rgba(255, 149, 0, 0.16); border-bottom-color: rgba(255, 149, 0, 0.62); }
+.comment-mark.annotation-replace,
+.comment-mark.annotation-delete { background: rgba(255, 59, 48, 0.13); border-bottom-color: rgba(255, 59, 48, 0.55); }
+.comment-mark.annotation-insert { background: rgba(40, 167, 69, 0.13); border-bottom-color: rgba(40, 167, 69, 0.55); }
 
 /* ── Comment tooltip ── */
 
@@ -873,6 +899,20 @@ body {
   transition: border-color 0.12s;
 }
 #comment-input:focus { border-color: var(--accent); }
+
+#annotation-type {
+  width: 100%;
+  margin-bottom: 8px;
+  border: 1px solid var(--border-medium);
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  color: var(--text);
+  font: 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  padding: 6px 8px;
+  outline: none;
+}
+
+#annotation-type:focus { border-color: var(--accent); }
 
 .comment-bubble-footer {
   display: flex;
@@ -1532,6 +1572,7 @@ body {
 
 #plan-actions > .copy-wrap,
 #plan-actions > #panel-toggle-btn,
+#plan-actions > #approve-btn,
 #plan-actions > #send-btn,
 #plan-actions > #diff-btn,
 #plan-actions > #live-badge {
@@ -1688,6 +1729,11 @@ body {
   color: var(--text-muted);
   font-size: 12.5px;
   line-height: 1.55;
+}
+
+.panel-empty-muted {
+  color: var(--text-dim);
+  font-size: 11.5px;
 }
 
 .file-preview-title {

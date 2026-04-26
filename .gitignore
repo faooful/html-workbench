@@ -8,6 +8,7 @@ node_modules/
 # Synced/generated plan data
 plans/*.md
 plans/*.comments.json
+plans/*.review.json
 plans/.sources.json
 plans/.snapshots/
 

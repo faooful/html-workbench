@@ -79,11 +79,13 @@
           </button>
         </div>
         <button id="diff-btn" class="btn-ghost hidden">Diff</button>
-        <button id="send-btn" class="btn-send hidden">Send to Claude</button>
+        <button id="approve-btn" class="btn-approve hidden">Approve</button>
+        <button id="send-btn" class="btn-send hidden">Request changes</button>
       </div>
     </div>
 
     <div id="version-banner" class="hidden"></div>
+    <div id="review-banner" class="hidden"></div>
 
     <div id="live-bar" class="hidden">
       <span class="live-bar-text">This plan is awaiting your approval — select text and press <kbd>⌘↵</kbd> to add a comment, then send to Claude.</span>
@@ -142,6 +144,14 @@
 
 <!-- Comment input bubble -->
 <div id="comment-bubble" class="hidden">
+  <select id="annotation-type" aria-label="Annotation type">
+    <option value="comment">Comment</option>
+    <option value="question">Question</option>
+    <option value="risk">Risk</option>
+    <option value="replace">Replace</option>
+    <option value="delete">Delete</option>
+    <option value="insert">Insert</option>
+  </select>
   <textarea id="comment-input" placeholder="Add a note for Claude..." rows="3" spellcheck="false"></textarea>
   <div class="comment-bubble-footer">
     <button id="comment-cancel-btn" class="btn-ghost">Cancel</button>

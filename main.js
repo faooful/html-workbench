@@ -139,7 +139,7 @@ function startSharingServer() {
     const commentsMatch = pathname.match(/^\/api\/plans\/([^/]+)\/comments$/)
     if (commentsMatch) {
       const filename  = decodeURIComponent(commentsMatch[1])
-      const cfilepath = path.join(VIEWER_PLANS_DIR, filename.replace('.md', '.comments.json'))
+      const cfilepath = sidecarPath(filename, '.comments.json')
 
       if (req.method === 'GET') {
         if (!fs.existsSync(cfilepath)) {
@@ -164,6 +164,24 @@ function startSharingServer() {
             res.end('{"ok":true}')
           } catch (_) { res.writeHead(400); res.end() }
         })
+        return
+      }
+    }
+
+    // ── Review decision GET / POST ──
+    const reviewMatch = pathname.match(/^\/api\/plans\/([^/]+)\/review$/)
+    if (reviewMatch) {
+      const filename = decodeURIComponent(reviewMatch[1])
+
+      if (req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(loadPlanReview(filename) || null))
+        return
+      }
+
+      if (req.method === 'POST') {
+        res.writeHead(403, { 'Content-Type': 'application/json' })
+        res.end('{"error":"Review decisions are host-only"}')
         return
       }
     }
@@ -743,6 +761,30 @@ function getPlanContent(filename) {
   return fs.readFileSync(filepath, 'utf8')
 }
 
+function sidecarPath(filename, suffix) {
+  return path.join(VIEWER_PLANS_DIR, filename.replace(/\.md$/, suffix))
+}
+
+function loadPlanReview(filename) {
+  const filepath = sidecarPath(filename, '.review.json')
+  if (!fs.existsSync(filepath)) return null
+  try { return JSON.parse(fs.readFileSync(filepath, 'utf8')) } catch { return null }
+}
+
+function savePlanReview(filename, review) {
+  const normalized = {
+    filename,
+    decision: review?.decision || 'changes_requested',
+    decidedAt: review?.decidedAt || new Date().toISOString(),
+    annotationCount: Array.isArray(review?.annotations) ? review.annotations.length : Number(review?.annotationCount || 0),
+    annotations: Array.isArray(review?.annotations) ? review.annotations.slice(0, 100) : [],
+    summary: review?.summary || '',
+    source: review?.source || 'desktop',
+  }
+  fs.writeFileSync(sidecarPath(filename, '.review.json'), JSON.stringify(normalized, null, 2), 'utf8')
+  return normalized
+}
+
 function extractPlanReferences(filename) {
   const content = getPlanContent(filename)
   if (!content) return []
@@ -866,6 +908,7 @@ function getPlans() {
         live:         livePlans.has(filename),
         source:       planMetaCache.sourceMap[filename]  || 'archive',
         status:       planMetaCache.statusMap[filename]  || (livePlans.has(filename) ? 'needs_review' : 'reviewed'),
+        review:       loadPlanReview(filename),
         versionCount: getSnapshotTimestamps(filename).length,
         summary:      content
           .replace(/^#.+$/gm, '')
@@ -1023,18 +1066,27 @@ ipcMain.handle('dismiss-live', (_, filename) => {
 })
 
 ipcMain.handle('load-comments', (_, filename) => {
-  const filepath = path.join(VIEWER_PLANS_DIR, filename.replace('.md', '.comments.json'))
+  const filepath = sidecarPath(filename, '.comments.json')
   if (!fs.existsSync(filepath)) return []
   try { return JSON.parse(fs.readFileSync(filepath, 'utf8')) } catch { return [] }
 })
 
 ipcMain.handle('save-comments', (_, filename, comments) => {
   fs.writeFileSync(
-    path.join(VIEWER_PLANS_DIR, filename.replace('.md', '.comments.json')),
+    sidecarPath(filename, '.comments.json'),
     JSON.stringify(comments, null, 2),
     'utf8'
   )
   return true
+})
+
+ipcMain.handle('load-review', (_, filename) => loadPlanReview(filename))
+
+ipcMain.handle('save-review', (_, filename, review) => {
+  const saved = savePlanReview(filename, review)
+  planMetaCache = null
+  broadcastPlanUpdate({ review: filename })
+  return saved
 })
 
 ipcMain.handle('get-last-plan', () => {
