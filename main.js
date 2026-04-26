@@ -807,11 +807,20 @@ function savePlanReview(filename, review) {
     decidedAt: review?.decidedAt || new Date().toISOString(),
     annotationCount: Array.isArray(review?.annotations) ? review.annotations.length : Number(review?.annotationCount || 0),
     annotations: Array.isArray(review?.annotations) ? review.annotations.slice(0, 100) : [],
+    checklist: normalizeReviewChecklist(review?.checklist),
     summary: review?.summary || '',
     source: review?.source || 'desktop',
   }
   fs.writeFileSync(sidecarPath(filename, '.review.json'), JSON.stringify(normalized, null, 2), 'utf8')
   return normalized
+}
+
+function normalizeReviewChecklist(checklist = {}) {
+  const keys = ['scope_clear', 'files_identified', 'risks_noted', 'tests_included', 'ambiguities_resolved']
+  return keys.reduce((acc, key) => {
+    acc[key] = Boolean(checklist?.[key])
+    return acc
+  }, {})
 }
 
 function extractPlanReferences(filename) {

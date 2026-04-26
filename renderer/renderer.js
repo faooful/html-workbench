@@ -14,6 +14,7 @@ let paletteIndex    = 0
 let paletteResults  = []
 let paletteSearchPlans = []
 let paletteOpenPlans = []
+let paletteFilter = 'attention'
 let paletteRenderFrame = null
 let plansRefreshTimer = null
 let pendingPlanUpdate = null
@@ -74,6 +75,7 @@ const tocPanel            = document.getElementById('toc-panel')
 const tocList             = document.getElementById('toc-list')
 const palette             = document.getElementById('palette')
 const paletteInput        = document.getElementById('palette-input')
+const paletteFilters      = document.getElementById('palette-filters')
 const paletteList         = document.getElementById('palette-list')
 const paletteBackdrop     = document.getElementById('palette-backdrop')
 const diffBtn             = document.getElementById('diff-btn')
@@ -160,6 +162,7 @@ function indexPalettePlans() {
       plan.repo,
       plan.summary,
       plan.trigger,
+      statusLabelFor(plan.status || (plan.live ? 'needs_review' : 'reviewed')),
     ].filter(Boolean).join(' ').toLowerCase(),
   }))
 }
@@ -183,6 +186,7 @@ function openPalette() {
   paletteOpenPlans = allPlans
   palette.classList.remove('hidden')
   paletteInput.value = ''
+  renderPaletteFilters()
   renderPaletteList()
   paletteInput.focus()
 }
@@ -210,6 +214,7 @@ function renderPaletteList() {
         plan.repo,
         plan.summary,
         plan.trigger,
+        statusLabelFor(plan.status || (plan.live ? 'needs_review' : 'reviewed')),
       ].filter(Boolean).join(' ').toLowerCase(),
     }))
     : paletteSearchPlans
@@ -218,12 +223,14 @@ function renderPaletteList() {
     paletteResults = sourceSearchPlans
       .filter(entry => entry.searchText.includes(q))
       .map(entry => entry.plan)
-      .slice(0, 50)
   } else {
     paletteResults = [...sourcePlans]
-      .sort((a, b) => new Date(b.modified) - new Date(a.modified))
-      .slice(0, 12)
   }
+
+  paletteResults = paletteResults
+    .filter(planMatchesPaletteFilter)
+    .sort(comparePlansForReview)
+    .slice(0, q ? 50 : 24)
 
   if (paletteIndex >= paletteResults.length) paletteIndex = Math.max(0, paletteResults.length - 1)
 
@@ -254,6 +261,48 @@ function renderPaletteList() {
   })
 
   paletteList.scrollTop = previousScroll
+}
+
+const PALETTE_FILTERS = [
+  { id: 'attention', label: 'Attention' },
+  { id: 'needs_review', label: 'Needs review' },
+  { id: 'changes_requested', label: 'Changes requested' },
+  { id: 'approved', label: 'Approved' },
+  { id: 'implemented', label: 'Implemented' },
+  { id: 'all', label: 'All' },
+]
+
+function renderPaletteFilters() {
+  if (!paletteFilters) return
+  paletteFilters.innerHTML = PALETTE_FILTERS.map(filter =>
+    `<button class="palette-filter${paletteFilter === filter.id ? ' active' : ''}" data-filter="${filter.id}">${filter.label}</button>`
+  ).join('')
+}
+
+function planStatus(plan) {
+  return plan.status || (plan.live ? 'needs_review' : 'reviewed')
+}
+
+function planMatchesPaletteFilter(plan) {
+  const status = planStatus(plan)
+  if (paletteFilter === 'all') return true
+  if (paletteFilter === 'attention') return status === 'needs_review' || status === 'changes_requested'
+  return status === paletteFilter
+}
+
+function comparePlansForReview(a, b) {
+  const priority = {
+    needs_review: 0,
+    changes_requested: 1,
+    in_progress: 2,
+    approved: 3,
+    implemented: 4,
+    reviewed: 5,
+  }
+  const ap = priority[planStatus(a)] ?? 9
+  const bp = priority[planStatus(b)] ?? 9
+  if (ap !== bp) return ap - bp
+  return new Date(b.modified) - new Date(a.modified)
 }
 
 function updatePaletteActive({ scroll = true } = {}) {
@@ -290,6 +339,14 @@ function schedulePaletteRender({ resetIndex = false } = {}) {
 }
 
 paletteInput.addEventListener('input', () => schedulePaletteRender({ resetIndex: true }))
+
+paletteFilters?.addEventListener('click', e => {
+  const btn = e.target.closest?.('.palette-filter')
+  if (!btn) return
+  paletteFilter = btn.dataset.filter || 'attention'
+  renderPaletteFilters()
+  schedulePaletteRender({ resetIndex: true })
+})
 
 function activatePaletteItemFromEvent(e) {
   const item = e.target.closest?.('.palette-item') || paletteItemFromPoint(e.clientX, e.clientY)
@@ -555,14 +612,26 @@ function buildFeedbackMessage() {
   let msg = 'I\'ve reviewed the plan. Please revise it based on the structured annotations below, then present the updated plan for approval.\n\n'
   msg += '---\n\n'
   msg += activeContent.trimEnd()
+  msg += '\n\n---\n\nReview checklist:\n\n'
+  for (const [key, label] of REVIEW_CHECKLIST_ITEMS) {
+    msg += `- ${getReviewChecklist()[key] ? '[x]' : '[ ]'} ${label}\n`
+  }
   msg += '\n\n---\n\nAnnotations:\n\n'
-  for (const c of comments) {
-    const type = annotationTypeLabel(c.type || 'comment')
-    msg += `> "${c.quote.substring(0, 200)}${c.quote.length > 200 ? '…' : ''}"\n`
-    msg += `Type: ${type}\n`
-    msg += `Note: ${c.note}\n\n`
+  for (const group of groupedAnnotations(comments)) {
+    msg += `### ${annotationTypeLabel(group.type)}\n\n`
+    for (const c of group.items) {
+      msg += `> "${c.quote.substring(0, 200)}${c.quote.length > 200 ? '…' : ''}"\n`
+      msg += `Note: ${c.note}\n\n`
+    }
   }
   return msg.trimEnd()
+}
+
+function groupedAnnotations(items) {
+  const order = ['risk', 'question', 'replace', 'delete', 'insert', 'comment']
+  return order
+    .map(type => ({ type, items: items.filter(c => (c.type || 'comment') === type) }))
+    .filter(group => group.items.length)
 }
 
 function annotationTypeLabel(type) {
@@ -585,6 +654,12 @@ function reviewDecisionLabel(decision) {
 }
 
 function buildReviewPayload(decision) {
+  const summary = {
+    approved: 'Plan approved for implementation.',
+    changes_requested: `Requested changes with ${comments.length} structured ${comments.length === 1 ? 'annotation' : 'annotations'}.`,
+    dismissed: 'Plan dismissed without approval.',
+    draft: 'Draft review checklist.',
+  }[decision] || 'Plan reviewed.'
   return {
     decision,
     decidedAt: new Date().toISOString(),
@@ -597,9 +672,8 @@ function buildReviewPayload(decision) {
       author: c.author || null,
       timestamp: c.timestamp,
     })),
-    summary: decision === 'approved'
-      ? 'Plan approved for implementation.'
-      : `Requested changes with ${comments.length} structured ${comments.length === 1 ? 'annotation' : 'annotations'}.`,
+    checklist: getReviewChecklist(),
+    summary,
     source: window.WEB_MODE ? 'web' : 'desktop',
   }
 }
@@ -611,6 +685,7 @@ function renderReviewBanner() {
   if (!currentReview || allPlans.find(p => p.filename === activePlan)?.live) return
 
   const decision = currentReview.decision || 'reviewed'
+  if (decision === 'draft') return
   const count = Number(currentReview.annotationCount || currentReview.annotations?.length || 0)
   const date = currentReview.decidedAt ? formatDate(currentReview.decidedAt) : 'previously'
   reviewBanner.classList.remove('hidden')
@@ -668,6 +743,7 @@ function statusLabelFor(status) {
     in_progress: 'In progress',
     implemented: 'Implemented',
     approved: 'Approved',
+    draft: 'Draft review',
     reviewed: 'Reviewed',
   }[status] || 'Reviewed'
 }
@@ -858,8 +934,12 @@ function renderContextPanel() {
 function renderReviewPanel() {
   if (!reviewDetail) return
   const annotations = currentReview?.annotations?.length ? currentReview.annotations : comments
+  const checklist = currentReview?.checklist || defaultReviewChecklist()
   if (!currentReview && !annotations.length) {
-    reviewDetail.innerHTML = '<div class="panel-empty"><strong>No review yet.</strong><br>Approve the live plan or add annotations and request changes to create a review record.</div>'
+    reviewDetail.innerHTML = `
+      ${reviewChecklistHtml(checklist)}
+      <div class="panel-empty"><strong>No review yet.</strong><br>Approve the live plan or add annotations and request changes to create a review record.</div>`
+    wireReviewChecklist()
     return
   }
 
@@ -871,9 +951,69 @@ function renderReviewPanel() {
       <div class="review-summary-title">${escapeHtml(decision === 'draft' ? 'Draft annotations' : reviewDecisionLabel(decision))}</div>
       <div class="review-summary-meta">${escapeHtml(decidedAt)} · ${annotations.length} ${annotations.length === 1 ? 'annotation' : 'annotations'}</div>
     </div>
+    ${reviewChecklistHtml(checklist)}
     <div class="review-annotation-list">
       ${annotations.length ? annotations.map(annotationCard).join('') : '<div class="panel-empty">No annotations were attached to this decision.</div>'}
     </div>`
+  wireReviewChecklist()
+}
+
+const REVIEW_CHECKLIST_ITEMS = [
+  ['scope_clear', 'Scope clear'],
+  ['files_identified', 'Files identified'],
+  ['risks_noted', 'Risks noted'],
+  ['tests_included', 'Tests included'],
+  ['ambiguities_resolved', 'Ambiguities resolved'],
+]
+
+function defaultReviewChecklist() {
+  return REVIEW_CHECKLIST_ITEMS.reduce((acc, [key]) => {
+    acc[key] = false
+    return acc
+  }, {})
+}
+
+function getReviewChecklist() {
+  const base = { ...defaultReviewChecklist(), ...(currentReview?.checklist || {}) }
+  if (!reviewDetail) return base
+  reviewDetail.querySelectorAll('[data-review-check]').forEach(input => {
+    base[input.dataset.reviewCheck] = input.checked
+  })
+  return base
+}
+
+function reviewChecklistHtml(checklist) {
+  const normalized = { ...defaultReviewChecklist(), ...(checklist || {}) }
+  return `<div class="review-checklist">
+    <div class="review-checklist-title">Checklist</div>
+    ${REVIEW_CHECKLIST_ITEMS.map(([key, label]) => `
+      <label class="review-check-item">
+        <input type="checkbox" data-review-check="${key}" ${normalized[key] ? 'checked' : ''}>
+        <span>${label}</span>
+      </label>`).join('')}
+  </div>`
+}
+
+function wireReviewChecklist() {
+  reviewDetail?.querySelectorAll('[data-review-check]').forEach(input => {
+    input.addEventListener('change', saveDraftReviewChecklist)
+  })
+}
+
+async function saveDraftReviewChecklist() {
+  if (window.WEB_MODE || !activePlan) return
+  const checklist = getReviewChecklist()
+  currentReview = await window.planAPI.saveReview?.(activePlan, {
+    ...(currentReview || {}),
+    decision: currentReview?.decision || 'draft',
+    decidedAt: currentReview?.decidedAt || new Date().toISOString(),
+    annotations: currentReview?.annotations || comments,
+    annotationCount: currentReview?.annotationCount ?? comments.length,
+    checklist,
+    summary: currentReview?.summary || 'Draft review checklist.',
+    source: 'desktop',
+  }).catch(() => currentReview)
+  renderReviewBanner()
 }
 
 function annotationCard(annotation) {
@@ -1351,6 +1491,7 @@ async function saveComment() {
   await window.planAPI.saveComments(activePlan, comments)
   dismissCommentUI()
   applyCommentHighlights()
+  if (activePanel === 'review') renderReviewPanel()
   showToast('Comment added')
 }
 
@@ -1427,7 +1568,11 @@ liveDismissBtn.addEventListener('click', async () => {
   currentReview = await window.planAPI.saveReview?.(activePlan, buildReviewPayload('dismissed')).catch(() => null) || null
   await window.planAPI.dismissLive(activePlan)
   const plan = allPlans.find(p => p.filename === activePlan)
-  if (plan) plan.live = false
+  if (plan) {
+    plan.live = false
+    plan.status = 'reviewed'
+    plan.review = currentReview
+  }
   liveBadge.classList.add('hidden')
   liveBar.classList.add('hidden')
   approveBtn?.classList.add('hidden')
@@ -1441,7 +1586,11 @@ liveDismissBtn.addEventListener('click', async () => {
 async function completeLiveReview(plan, decision, toastMessage) {
   currentReview = await window.planAPI.saveReview?.(activePlan, buildReviewPayload(decision)).catch(() => null) || null
   await window.planAPI.dismissLive(activePlan)
-  if (plan) plan.live = false
+  if (plan) {
+    plan.live = false
+    plan.status = decision === 'approved' ? 'approved' : 'changes_requested'
+    plan.review = currentReview
+  }
   liveBadge.classList.add('hidden')
   liveBar.classList.add('hidden')
   approveBtn?.classList.add('hidden')
