@@ -9,7 +9,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "Local-first review inbox and plan memory for AI-generated implementation plans.",
   "dependencies": {
     "chokidar": "^5.0.0",
     "electron": "^41.3.0"

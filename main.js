@@ -158,6 +158,14 @@ function startSharingServer() {
           try {
             const comments = JSON.parse(body)
             fs.writeFileSync(cfilepath, JSON.stringify(comments, null, 2), 'utf8')
+            appendPlanTimelineEvent(filename, {
+              type: 'annotated',
+              summary: `${Array.isArray(comments) ? comments.length : 0} annotations saved from browser`,
+              data: {
+                annotationCount: Array.isArray(comments) ? comments.length : 0,
+                source: 'browser',
+              },
+            })
             broadcastSSE({ comments: filename })
             mainWindow?.webContents.send('plan:updated', { comments: filename })
             res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -184,6 +192,15 @@ function startSharingServer() {
         res.end('{"error":"Review decisions are host-only"}')
         return
       }
+    }
+
+    // ── Plan timeline ──
+    const timelineMatch = pathname.match(/^\/api\/plans\/([^/]+)\/timeline$/)
+    if (timelineMatch && req.method === 'GET') {
+      const filename = decodeURIComponent(timelineMatch[1])
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(loadPlanTimeline(filename)))
+      return
     }
 
     // ── Snapshots list ──
@@ -272,7 +289,13 @@ function syncClaudePlans() {
     const dest = path.join(VIEWER_PLANS_DIR, file)
     try {
       if (!fs.existsSync(dest) || fs.statSync(src).mtimeMs > fs.statSync(dest).mtimeMs) {
+        const existed = fs.existsSync(dest)
         fs.copyFileSync(src, dest)
+        appendPlanTimelineEvent(file, {
+          type: existed ? 'revised' : 'created',
+          summary: existed ? 'Claude plan content changed' : 'Claude plan imported',
+          data: { source: 'claude', sourcePath: src },
+        })
         synced.push(file)
       }
     } catch (_) {}
@@ -323,7 +346,21 @@ function syncCodexSessionPlans(sessionPath, sources) {
     const markdown = codexPlanMarkdown(plan)
     try {
       if (!fs.existsSync(dest) || fs.readFileSync(dest, 'utf8') !== markdown) {
-        if (fs.existsSync(dest)) saveSnapshot(filename, fs.readFileSync(dest, 'utf8'))
+        if (fs.existsSync(dest)) {
+          saveSnapshot(filename, fs.readFileSync(dest, 'utf8'))
+          appendPlanTimelineEvent(filename, {
+            type: 'revised',
+            summary: 'Codex plan content changed',
+            data: { source: 'codex', sourcePath: sessionPath },
+          })
+        } else {
+          appendPlanTimelineEvent(filename, {
+            type: 'created',
+            at: plan.createdAt,
+            summary: 'Codex plan imported',
+            data: { source: 'codex', sourcePath: sessionPath, repo: plan.repo || null },
+          })
+        }
         fs.writeFileSync(dest, markdown, 'utf8')
         imported.push(filename)
       }
@@ -815,12 +852,49 @@ function savePlanReview(filename, review) {
   return normalized
 }
 
+function loadPlanTimeline(filename) {
+  const filepath = sidecarPath(filename, '.timeline.json')
+  if (!fs.existsSync(filepath)) return []
+  try {
+    const events = JSON.parse(fs.readFileSync(filepath, 'utf8'))
+    return Array.isArray(events) ? events : []
+  } catch {
+    return []
+  }
+}
+
+function appendPlanTimelineEvent(filename, event) {
+  if (!filename) return null
+  const events = loadPlanTimeline(filename)
+  const next = {
+    id: crypto.randomUUID ? crypto.randomUUID() : hashText(`${Date.now()}:${Math.random()}`).slice(0, 16),
+    type: event.type || 'event',
+    at: event.at || new Date().toISOString(),
+    summary: event.summary || '',
+    data: event.data || {},
+  }
+  events.push(next)
+  try {
+    fs.writeFileSync(sidecarPath(filename, '.timeline.json'), JSON.stringify(events.slice(-200), null, 2), 'utf8')
+  } catch (_) {}
+  return next
+}
+
 function normalizeReviewChecklist(checklist = {}) {
   const keys = ['scope_clear', 'files_identified', 'risks_noted', 'tests_included', 'ambiguities_resolved']
   return keys.reduce((acc, key) => {
     acc[key] = Boolean(checklist?.[key])
     return acc
   }, {})
+}
+
+function reviewDecisionTimelineSummary(decision) {
+  return {
+    approved: 'Plan approved',
+    changes_requested: 'Changes requested',
+    dismissed: 'Plan dismissed',
+    draft: 'Review checklist updated',
+  }[decision] || 'Plan reviewed'
 }
 
 function extractPlanReferences(filename) {
@@ -1001,6 +1075,11 @@ function createWindow() {
     watcher.on('add', filepath => {
       const filename = path.basename(filepath)
       try { fs.copyFileSync(filepath, path.join(VIEWER_PLANS_DIR, filename)) } catch (_) {}
+      appendPlanTimelineEvent(filename, {
+        type: 'created',
+        summary: 'Claude plan imported',
+        data: { source: 'claude', sourcePath: filepath },
+      })
       const sources = loadSourceMeta()
       sources[filename] = {
         source: 'claude',
@@ -1025,7 +1104,14 @@ function createWindow() {
         try {
           const oldContent = fs.readFileSync(localPath, 'utf8')
           const newContent = fs.readFileSync(filepath, 'utf8')
-          if (oldContent !== newContent) saveSnapshot(filename, oldContent)
+          if (oldContent !== newContent) {
+            saveSnapshot(filename, oldContent)
+            appendPlanTimelineEvent(filename, {
+              type: 'revised',
+              summary: 'Claude plan content changed',
+              data: { source: 'claude', sourcePath: filepath },
+            })
+          }
         } catch (_) {}
       }
       try { fs.copyFileSync(filepath, localPath) } catch (_) {}
@@ -1127,13 +1213,28 @@ ipcMain.handle('save-comments', (_, filename, comments) => {
     JSON.stringify(comments, null, 2),
     'utf8'
   )
+  appendPlanTimelineEvent(filename, {
+    type: 'annotated',
+    summary: `${Array.isArray(comments) ? comments.length : 0} annotations saved`,
+    data: { annotationCount: Array.isArray(comments) ? comments.length : 0 },
+  })
   return true
 })
 
 ipcMain.handle('load-review', (_, filename) => loadPlanReview(filename))
+ipcMain.handle('load-timeline', (_, filename) => loadPlanTimeline(filename))
 
 ipcMain.handle('save-review', (_, filename, review) => {
   const saved = savePlanReview(filename, review)
+  appendPlanTimelineEvent(filename, {
+    type: saved.decision === 'draft' ? 'checklist_updated' : saved.decision,
+    summary: saved.summary || reviewDecisionTimelineSummary(saved.decision),
+    data: {
+      decision: saved.decision,
+      annotationCount: saved.annotationCount,
+      checklist: saved.checklist,
+    },
+  })
   planMetaCache = null
   broadcastPlanUpdate({ review: filename })
   return saved

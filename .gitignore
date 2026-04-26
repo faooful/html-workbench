@@ -9,6 +9,7 @@ node_modules/
 plans/*.md
 plans/*.comments.json
 plans/*.review.json
+plans/*.timeline.json
 plans/.sources.json
 plans/.snapshots/
 

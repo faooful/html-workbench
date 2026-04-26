@@ -9,6 +9,7 @@ let snapshots       = []   // array of epoch-ms timestamps, oldest first
 let activeSnapshot  = null // null = current; number = viewing that snapshot
 let comments        = []
 let currentReview   = null
+let timelineEvents  = []
 let pendingQuote    = ''
 let paletteIndex    = 0
 let paletteResults  = []
@@ -56,6 +57,7 @@ const approveBtn          = document.getElementById('approve-btn')
 const sendBtn             = document.getElementById('send-btn')
 const versionBanner       = document.getElementById('version-banner')
 const reviewBanner        = document.getElementById('review-banner')
+const readinessStrip      = document.getElementById('readiness-strip')
 const liveBar             = document.getElementById('live-bar')
 const liveDismissBtn      = document.getElementById('live-dismiss-btn')
 const viewer              = document.getElementById('viewer')
@@ -256,7 +258,7 @@ function renderPaletteList() {
     li.innerHTML = `
       <span class="palette-icon status-${escapeHtml(status)}" title="${escapeHtml(statusLabel)}" aria-label="${escapeHtml(statusLabel)}"></span>
       <span class="palette-item-title">${escapeHtml(plan.title)}</span>
-      <span class="palette-item-meta">${plan.versionCount ? `v${plan.versionCount + 1} · ` : ''}${formatRelativeDate(plan.modified)}</span>`
+      <span class="palette-item-meta">${escapeHtml(planAttentionReason(plan))}</span>`
     paletteList.appendChild(li)
   })
 
@@ -303,6 +305,27 @@ function comparePlansForReview(a, b) {
   const bp = priority[planStatus(b)] ?? 9
   if (ap !== bp) return ap - bp
   return new Date(b.modified) - new Date(a.modified)
+}
+
+function planChecklistProgress(plan) {
+  const checklist = plan.review?.checklist || {}
+  const total = REVIEW_CHECKLIST_ITEMS.length
+  const done = REVIEW_CHECKLIST_ITEMS.filter(([key]) => checklist[key]).length
+  return { done, total }
+}
+
+function planAttentionReason(plan) {
+  const status = planStatus(plan)
+  const progress = planChecklistProgress(plan)
+  const annotations = Number(plan.review?.annotationCount || plan.review?.annotations?.length || 0)
+  const bits = []
+  if (status === 'needs_review') bits.push('Live')
+  else bits.push(statusLabelFor(status))
+  if (annotations) bits.push(`${annotations} ann.`)
+  if (plan.review?.checklist) bits.push(`${progress.done}/${progress.total}`)
+  if (plan.versionCount) bits.push(`v${plan.versionCount + 1}`)
+  bits.push(formatRelativeDate(plan.modified))
+  return bits.join(' · ')
 }
 
 function updatePaletteActive({ scroll = true } = {}) {
@@ -645,6 +668,56 @@ function annotationTypeLabel(type) {
   }[type] || 'Comment'
 }
 
+function blockingAnnotations(items = comments) {
+  const blocking = new Set(['risk', 'question', 'replace', 'delete'])
+  return items.filter(c => blocking.has(c.type || 'comment'))
+}
+
+function checklistProgress(checklist = getReviewChecklist()) {
+  const total = REVIEW_CHECKLIST_ITEMS.length
+  const done = REVIEW_CHECKLIST_ITEMS.filter(([key]) => checklist[key]).length
+  return { done, total }
+}
+
+function readinessState() {
+  const checklist = getReviewChecklist()
+  const progress = checklistProgress(checklist)
+  const blockers = blockingAnnotations()
+  const unresolvedRefs = planReferences.filter(ref => !ref.exists).length
+  const reasons = []
+  if (allPlans.find(p => p.filename === activePlan)?.live) reasons.push('Live plan')
+  if (progress.done < progress.total) reasons.push(`${progress.total - progress.done} checklist items open`)
+  if (blockers.length) reasons.push(`${blockers.length} blocking annotations`)
+  if (unresolvedRefs) reasons.push(`${unresolvedRefs} unresolved file refs`)
+
+  if (blockers.length) {
+    return { id: 'changes', label: 'Changes likely needed', tone: 'warning', reasons, progress, blockers, unresolvedRefs }
+  }
+  if (progress.done === progress.total && !unresolvedRefs) {
+    return { id: 'ready', label: 'Ready to approve', tone: 'success', reasons: reasons.length ? reasons : ['Review complete'], progress, blockers, unresolvedRefs }
+  }
+  return { id: 'needs', label: 'Needs review', tone: 'neutral', reasons, progress, blockers, unresolvedRefs }
+}
+
+function renderReadinessStrip() {
+  if (!readinessStrip) return
+  readinessStrip.className = 'hidden'
+  readinessStrip.innerHTML = ''
+  if (!activePlan || currentReview?.decision === 'approved' || currentReview?.decision === 'changes_requested' || currentReview?.decision === 'dismissed') return
+
+  const state = readinessState()
+  readinessStrip.classList.remove('hidden')
+  readinessStrip.classList.add(`readiness-${state.tone}`)
+  readinessStrip.innerHTML = `
+    <div class="readiness-main">
+      <span class="readiness-label">${escapeHtml(state.label)}</span>
+      <span class="readiness-meta">${state.progress.done}/${state.progress.total} checklist · ${comments.length} ${comments.length === 1 ? 'annotation' : 'annotations'}</span>
+    </div>
+    <div class="readiness-reasons">${state.reasons.slice(0, 3).map(reason => `<span>${escapeHtml(reason)}</span>`).join('')}</div>
+    <button id="readiness-review-btn" class="btn-ghost">Review</button>`
+  readinessStrip.querySelector('#readiness-review-btn')?.addEventListener('click', () => setPanel(true, 'review'))
+}
+
 function reviewDecisionLabel(decision) {
   return {
     approved: 'Approved',
@@ -764,12 +837,14 @@ function closeTab(filename) {
       activeTrigger = null
       comments = []
       currentReview = null
+      timelineEvents = []
       snapshots = []
       planHeader.classList.add('hidden')
       viewer.classList.add('hidden')
       stepPanel.classList.add('hidden')
       versionBanner.classList.add('hidden')
       reviewBanner?.classList.add('hidden')
+      readinessStrip?.classList.add('hidden')
       liveBar.classList.add('hidden')
       emptyState.classList.remove('hidden')
       panelToggleBtn.classList.add('hidden')
@@ -796,12 +871,14 @@ async function openPlan(plan, opts = {}) {
   activeSnapshot  = null
   comments        = []
   currentReview   = null
+  timelineEvents  = []
   pendingQuote    = ''
   planReferences  = []
   activeRefPath   = null
   tocPanel.classList.add('hidden')
   versionBanner.classList.add('hidden')
   reviewBanner?.classList.add('hidden')
+  readinessStrip?.classList.add('hidden')
   isDiffMode = false
   diffBtn.classList.add('hidden')
   diffBtn.textContent = 'Diff'
@@ -843,6 +920,7 @@ async function openPlan(plan, opts = {}) {
   const saved = await window.planAPI.loadComments(plan.filename)
   comments = saved || []
   currentReview = await window.planAPI.loadReview?.(plan.filename).catch(() => null) || plan.review || null
+  timelineEvents = await window.planAPI.loadTimeline?.(plan.filename).catch(() => []) || []
   applyCommentHighlights()
 
   const isLive = plan.live
@@ -851,6 +929,7 @@ async function openPlan(plan, opts = {}) {
   approveBtn?.classList.toggle('hidden', !isLive)
   sendBtn.classList.toggle('hidden', !isLive)
   renderReviewBanner()
+  renderReadinessStrip()
   panelToggleBtn.classList.remove('hidden')
   diffBtn.classList.add('hidden')
 
@@ -938,6 +1017,7 @@ function renderReviewPanel() {
   if (!currentReview && !annotations.length) {
     reviewDetail.innerHTML = `
       ${reviewChecklistHtml(checklist)}
+      ${timelineHtml()}
       <div class="panel-empty"><strong>No review yet.</strong><br>Approve the live plan or add annotations and request changes to create a review record.</div>`
     wireReviewChecklist()
     return
@@ -952,10 +1032,38 @@ function renderReviewPanel() {
       <div class="review-summary-meta">${escapeHtml(decidedAt)} · ${annotations.length} ${annotations.length === 1 ? 'annotation' : 'annotations'}</div>
     </div>
     ${reviewChecklistHtml(checklist)}
+    ${timelineHtml()}
     <div class="review-annotation-list">
       ${annotations.length ? annotations.map(annotationCard).join('') : '<div class="panel-empty">No annotations were attached to this decision.</div>'}
     </div>`
   wireReviewChecklist()
+}
+
+function timelineHtml() {
+  const events = [...timelineEvents].reverse().slice(0, 8)
+  if (!events.length) return '<div class="review-timeline"><div class="review-checklist-title">Timeline</div><div class="panel-empty">No timeline events yet.</div></div>'
+  return `<div class="review-timeline">
+    <div class="review-checklist-title">Timeline</div>
+    ${events.map(event => `<div class="timeline-event">
+      <span class="timeline-dot"></span>
+      <div>
+        <div class="timeline-summary">${escapeHtml(event.summary || timelineEventLabel(event.type))}</div>
+        <div class="timeline-meta">${escapeHtml(timelineEventLabel(event.type))} · ${escapeHtml(formatRelativeDate(event.at))}</div>
+      </div>
+    </div>`).join('')}
+  </div>`
+}
+
+function timelineEventLabel(type) {
+  return {
+    created: 'Created',
+    revised: 'Revised',
+    annotated: 'Annotated',
+    checklist_updated: 'Checklist updated',
+    approved: 'Approved',
+    changes_requested: 'Changes requested',
+    dismissed: 'Dismissed',
+  }[type] || 'Event'
 }
 
 const REVIEW_CHECKLIST_ITEMS = [
@@ -1013,7 +1121,9 @@ async function saveDraftReviewChecklist() {
     summary: currentReview?.summary || 'Draft review checklist.',
     source: 'desktop',
   }).catch(() => currentReview)
+  timelineEvents = await window.planAPI.loadTimeline?.(activePlan).catch(() => timelineEvents) || timelineEvents
   renderReviewBanner()
+  renderReadinessStrip()
 }
 
 function annotationCard(annotation) {
@@ -1327,8 +1437,11 @@ tooltipDelete.addEventListener('click', async () => {
   const id = tooltipDelete.dataset.id
   comments = comments.filter(c => c.id !== id)
   await window.planAPI.saveComments(activePlan, comments)
+  timelineEvents = await window.planAPI.loadTimeline?.(activePlan).catch(() => timelineEvents) || timelineEvents
   hideTooltip()
   applyCommentHighlights()
+  renderReadinessStrip()
+  if (activePanel === 'review') renderReviewPanel()
 })
 
 // ── Comments ──────────────────────────────────────────────────────────────────
@@ -1489,8 +1602,10 @@ async function saveComment() {
   if (author) comment.author = author
   comments.push(comment)
   await window.planAPI.saveComments(activePlan, comments)
+  timelineEvents = await window.planAPI.loadTimeline?.(activePlan).catch(() => timelineEvents) || timelineEvents
   dismissCommentUI()
   applyCommentHighlights()
+  renderReadinessStrip()
   if (activePanel === 'review') renderReviewPanel()
   showToast('Comment added')
 }
@@ -1566,6 +1681,7 @@ function applyCommentHighlights() {
 
 liveDismissBtn.addEventListener('click', async () => {
   currentReview = await window.planAPI.saveReview?.(activePlan, buildReviewPayload('dismissed')).catch(() => null) || null
+  timelineEvents = await window.planAPI.loadTimeline?.(activePlan).catch(() => timelineEvents) || timelineEvents
   await window.planAPI.dismissLive(activePlan)
   const plan = allPlans.find(p => p.filename === activePlan)
   if (plan) {
@@ -1579,12 +1695,14 @@ liveDismissBtn.addEventListener('click', async () => {
   sendBtn.classList.add('hidden')
   renderTabs()
   renderReviewBanner()
+  renderReadinessStrip()
 })
 
 // ── Review decisions ──────────────────────────────────────────────────────────
 
 async function completeLiveReview(plan, decision, toastMessage) {
   currentReview = await window.planAPI.saveReview?.(activePlan, buildReviewPayload(decision)).catch(() => null) || null
+  timelineEvents = await window.planAPI.loadTimeline?.(activePlan).catch(() => timelineEvents) || timelineEvents
   await window.planAPI.dismissLive(activePlan)
   if (plan) {
     plan.live = false
@@ -1597,6 +1715,7 @@ async function completeLiveReview(plan, decision, toastMessage) {
   sendBtn.classList.add('hidden')
   renderTabs()
   renderReviewBanner()
+  renderReadinessStrip()
   showToast(toastMessage, 4000)
 }
 
@@ -1690,10 +1809,16 @@ async function refreshPlansFromUpdate() {
       // A browser client saved comments — reload them
       const saved = await window.planAPI.loadComments(activePlan)
       comments = saved || []
+      timelineEvents = await window.planAPI.loadTimeline?.(activePlan).catch(() => timelineEvents) || timelineEvents
       applyCommentHighlights()
+      renderReadinessStrip()
+      if (activePanel === 'review') renderReviewPanel()
     } else if (data?.review === activePlan) {
       currentReview = await window.planAPI.loadReview?.(activePlan).catch(() => null) || null
+      timelineEvents = await window.planAPI.loadTimeline?.(activePlan).catch(() => []) || []
       renderReviewBanner()
+      renderReadinessStrip()
+      if (activePanel === 'review') renderReviewPanel()
     }
   } finally {
     refreshInFlight = false

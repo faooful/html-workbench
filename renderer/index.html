@@ -37,7 +37,16 @@
   <div id="main-area">
 
     <div id="empty-state">
-      <p>Select a plan to read it</p>
+      <div class="empty-card">
+        <h2>Plan Memory Review Inbox</h2>
+        <p>Review Claude and Codex implementation plans before they touch your codebase. Plans stay local, decisions are archived, and review history becomes searchable memory.</p>
+        <div class="empty-steps">
+          <span>Generate a plan in Claude Code or Codex</span>
+          <span>Open it with <kbd>⌘K</kbd></span>
+          <span>Annotate, approve, or request changes</span>
+        </div>
+        <p class="empty-note">Sharing is local-network only and unauthenticated. Use it only on networks you trust.</p>
+      </div>
     </div>
 
     <div id="plan-header" class="hidden">
@@ -91,6 +100,7 @@
       <span class="live-bar-text">This plan is awaiting your approval — select text and press <kbd>⌘↵</kbd> to add a comment, then send to Claude.</span>
       <button id="live-dismiss-btn">Dismiss</button>
     </div>
+    <div id="readiness-strip" class="hidden"></div>
 
     <div id="content-shell">
       <div id="content-main">

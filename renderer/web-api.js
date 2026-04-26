@@ -32,6 +32,9 @@ window.planAPI = {
 
   saveReview: () => Promise.resolve(false),
 
+  loadTimeline: f =>
+    fetch(`/api/plans/${encodeURIComponent(f)}/timeline`).then(r => r.json()).catch(() => []),
+
   getLastPlan:  ()  => Promise.resolve(localStorage.getItem('pv_last') || null),
   setLastPlan:  f   => { localStorage.setItem('pv_last', f); return Promise.resolve(true) },
 
