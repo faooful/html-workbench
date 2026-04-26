@@ -331,6 +331,9 @@ function syncCodexSessionPlans(sessionPath, sources) {
         source: 'codex',
         sourcePath: sessionPath,
         sourceId: plan.sourceId,
+        cwd: plan.cwd || null,
+        repo: plan.repo || null,
+        title: plan.title || null,
         createdAt: sources[filename]?.createdAt || plan.createdAt,
       }
     } catch (_) {}
@@ -644,8 +647,12 @@ function buildPlanMeta(planFilenames) {
     if (sourceMap[filename] === 'archive' && fs.existsSync(path.join(CLAUDE_PLANS_DIR, filename))) {
       sourceMap[filename] = 'claude'
     }
-    if (embedded.repo) repoMap[filename] = embedded.repo
-    if (embedded.cwd) rootMap[filename] = embedded.cwd
+    const sourceEntry = sourceMeta[filename] || {}
+    const codexRoot = sourceEntry.source === 'codex' && !embedded.cwd
+      ? inferCodexSessionRoot(sourceEntry.sourcePath)
+      : null
+    if (embedded.repo || sourceEntry.repo) repoMap[filename] = embedded.repo || sourceEntry.repo
+    if (embedded.cwd || sourceEntry.cwd || codexRoot) rootMap[filename] = embedded.cwd || sourceEntry.cwd || codexRoot
     statusMap[filename] = inferPlanStatus(filename, content, taskIndex)
   }
 
@@ -671,6 +678,28 @@ function buildPlanMeta(planFilenames) {
   }
 
   return { repoMap, triggerMap, rootMap, sourceMap, statusMap }
+}
+
+function inferCodexSessionRoot(sessionPath) {
+  if (!sessionPath || !fs.existsSync(sessionPath)) return null
+  let cwd = null
+  try {
+    for (const line of fs.readFileSync(sessionPath, 'utf8').split('\n')) {
+      if (!line.trim()) continue
+      let entry
+      try { entry = JSON.parse(line) } catch (_) { continue }
+      const meta = entry.payload
+      if ((entry.type === 'session_meta' || entry.type === 'turn_context') && meta?.cwd) {
+        cwd = meta.cwd
+      }
+    }
+  } catch (_) {}
+  if (!cwd || !fs.existsSync(cwd)) return null
+  try {
+    return fs.statSync(cwd).isDirectory() ? cwd : null
+  } catch (_) {
+    return null
+  }
 }
 
 function getClaudeProjectMatches(planFilenames) {
