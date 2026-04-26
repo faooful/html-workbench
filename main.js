@@ -20,9 +20,12 @@ const CLAUDE_TASKS_DIR  = path.join(os.homedir(), '.claude', 'tasks')
 const LIVE_STATE_FILE  = path.join(__dirname, '.live-plans.json')
 const PREFS_FILE       = path.join(__dirname, '.prefs.json')
 const SOURCES_FILE     = path.join(VIEWER_PLANS_DIR, '.sources.json')
+const CODEX_IMPORT_VERSION = 2
 
 let mainWindow
 let planMetaCache = null
+let taskIndexCache = null
+let projectMetaCache = null
 
 // Plans marked live (persisted to .live-plans.json so restarts don't forget)
 const livePlans = new Set()
@@ -269,32 +272,65 @@ function syncClaudePlans() {
   return synced
 }
 
-function syncCodexPlans() {
+function syncCodexPlans(sessionPath = null) {
   if (!fs.existsSync(CODEX_SESSIONS_DIR)) return []
   const sources = loadSourceMeta()
   const imported = []
-  for (const sessionPath of walkFiles(CODEX_SESSIONS_DIR, f => f.endsWith('.jsonl'))) {
-    for (const plan of extractCodexPlans(sessionPath)) {
-      const filename = codexPlanFilename(plan.sourceId, plan.content)
-      const dest = path.join(VIEWER_PLANS_DIR, filename)
-      const markdown = codexPlanMarkdown(plan)
-      try {
-        if (!fs.existsSync(dest) || fs.readFileSync(dest, 'utf8') !== markdown) {
-          if (fs.existsSync(dest)) saveSnapshot(filename, fs.readFileSync(dest, 'utf8'))
-          fs.writeFileSync(dest, markdown, 'utf8')
-          imported.push(filename)
-        }
-        sources[filename] = {
-          source: 'codex',
-          sourcePath: sessionPath,
-          sourceId: plan.sourceId,
-          createdAt: sources[filename]?.createdAt || plan.createdAt,
-        }
-      } catch (_) {}
-    }
+  const sessionPaths = sessionPath
+    ? [sessionPath]
+    : walkFiles(CODEX_SESSIONS_DIR, f => f.endsWith('.jsonl'))
+
+  for (const currentSessionPath of sessionPaths) {
+    imported.push(...syncCodexSessionPlans(currentSessionPath, sources))
   }
-  saveSourceMeta(sources)
+
+  if (sessionPaths.length) saveSourceMeta(sources)
   return imported
+}
+
+function syncCodexSessionPlans(sessionPath, sources) {
+  if (!sessionPath.endsWith('.jsonl') || !fs.existsSync(sessionPath)) return []
+
+  let stat
+  try { stat = fs.statSync(sessionPath) } catch (_) { return [] }
+
+  const sessionKey = codexSessionCacheKey(sessionPath)
+  const cached = sources[sessionKey]
+  if (cached?.size === stat.size && cached?.mtimeMs === stat.mtimeMs && cached?.importVersion === CODEX_IMPORT_VERSION) return []
+
+  const imported = []
+  for (const plan of extractCodexPlans(sessionPath)) {
+    const filename = codexPlanFilename(plan.sourceId, plan.content)
+    const dest = path.join(VIEWER_PLANS_DIR, filename)
+    const markdown = codexPlanMarkdown(plan)
+    try {
+      if (!fs.existsSync(dest) || fs.readFileSync(dest, 'utf8') !== markdown) {
+        if (fs.existsSync(dest)) saveSnapshot(filename, fs.readFileSync(dest, 'utf8'))
+        fs.writeFileSync(dest, markdown, 'utf8')
+        imported.push(filename)
+      }
+      sources[filename] = {
+        source: 'codex',
+        sourcePath: sessionPath,
+        sourceId: plan.sourceId,
+        createdAt: sources[filename]?.createdAt || plan.createdAt,
+      }
+    } catch (_) {}
+  }
+
+  sources[sessionKey] = {
+    source: 'codex-session',
+    sourcePath: sessionPath,
+    size: stat.size,
+    mtimeMs: stat.mtimeMs,
+    importVersion: CODEX_IMPORT_VERSION,
+    checkedAt: new Date().toISOString(),
+  }
+  return imported
+}
+
+function codexSessionCacheKey(sessionPath) {
+  return `__codexSession:${sessionPath}`
 }
 
 function loadSourceMeta() {
@@ -331,6 +367,7 @@ function extractCodexPlans(sessionPath) {
   let sessionId = path.basename(sessionPath, '.jsonl')
   let cwd = null
   let repo = null
+  let latestUserPrompt = ''
   let planIndex = 0
   try {
     const lines = fs.readFileSync(sessionPath, 'utf8').split('\n').filter(Boolean)
@@ -341,7 +378,17 @@ function extractCodexPlans(sessionPath) {
       if (entry.type === 'session_meta' && meta) {
         sessionId = meta.id || sessionId
         cwd = meta.cwd || cwd
-        repo = meta.git?.repository_url ? repoFromGitUrl(meta.git.repository_url) : repo
+        repo = repoFromGitUrl(meta.git?.repository_url) || repoFromPath(cwd) || repo
+      }
+      if (entry.type === 'turn_context' && meta) {
+        cwd = meta.cwd || cwd
+        repo = repoFromPath(cwd) || repo
+      }
+      if (entry.type === 'response_item' && entry.payload?.type === 'message' && entry.payload?.role === 'user') {
+        latestUserPrompt = collectMessageText(entry.payload.content) || latestUserPrompt
+      }
+      if (entry.type === 'event_msg' && meta?.type === 'user_message') {
+        latestUserPrompt = meta.message || latestUserPrompt
       }
       if (entry.type !== 'response_item' || entry.payload?.type !== 'message' || entry.payload?.role !== 'assistant') {
         continue
@@ -355,6 +402,7 @@ function extractCodexPlans(sessionPath) {
           const sourceId = `${sessionId}:${planIndex++}:${hashText(content).slice(0, 12)}`
           plans.push({
             content,
+            title: extractCodexPlanTitle(content, latestUserPrompt),
             sourceId,
             sourcePath: sessionPath,
             createdAt: entry.timestamp || new Date().toISOString(),
@@ -389,7 +437,7 @@ function codexPlanFilename(sourceId, content) {
 }
 
 function codexPlanMarkdown(plan) {
-  const title = plan.content.match(/^#\s+(.+)$/m)?.[1]?.trim() || 'Codex Plan'
+  const title = plan.title || extractCodexPlanTitle(plan.content)
   const meta = [
     `Source: Codex`,
     plan.repo ? `Repo: ${plan.repo}` : null,
@@ -397,7 +445,85 @@ function codexPlanMarkdown(plan) {
     `Created: ${plan.createdAt}`,
     `Source ID: ${plan.sourceId}`,
   ].filter(Boolean).join('\n')
-  return `# ${title}\n\n<!-- plan-viewer-source\n${meta}\n-->\n\n${plan.content.replace(/^#\s+.+\n?/, '').trim()}\n`
+  return `# ${title}\n\n<!-- plan-viewer-source\n${meta}\n-->\n\n${stripCodexPlanTitle(plan.content).trim()}\n`
+}
+
+function extractCodexPlanTitle(content, fallbackText = '') {
+  const text = String(content || '').trim()
+  const heading = text.match(/^#\s+(.+)$/m)?.[1]?.trim()
+  if (heading) return cleanTitle(heading)
+
+  const labelled = text.match(/^\s*(?:\*\*)?title(?:\*\*)?\s*:\s*(?:\*\*)?(.+?)(?:\*\*)?\s*$/im)?.[1]?.trim()
+  if (labelled) return cleanTitle(labelled)
+
+  const firstBold = text.match(/^\s*\*\*(.{8,120}?)\*\*\s*$/m)?.[1]?.trim()
+  if (firstBold && !/^(summary|test plan|assumptions|key changes)$/i.test(firstBold)) return cleanTitle(firstBold)
+
+  const firstSection = text.match(/^##+\s+(.+)$/m)?.[1]?.trim()
+  if (firstSection && !isGenericPlanSection(firstSection)) return cleanTitle(firstSection)
+
+  const promptTitle = titleFromPrompt(fallbackText)
+  if (promptTitle) return promptTitle
+
+  const firstLine = text.split('\n').map(line => line.trim()).find(line =>
+    line.length >= 8 && line.length <= 120 && !line.startsWith('-') && !line.startsWith('```') && !isGenericPlanSection(line)
+  )
+  return firstLine ? cleanTitle(firstLine) : 'Codex Plan'
+}
+
+function isGenericPlanSection(title) {
+  return /^(summary|context|findings|key changes|implementation|test plan|assumptions|scope|overview)$/i.test(String(title || '').trim())
+}
+
+function titleFromPrompt(prompt) {
+  const text = String(prompt || '')
+    .replace(/<\w[^>]*>[\s\S]*?<\/\w+>/g, '')
+    .replace(/^please implement this plan:\s*/i, '')
+    .trim()
+  const heading = text.match(/^#\s+(.+)$/m)?.[1]?.trim()
+  if (heading) return cleanTitle(heading)
+  const firstLine = text.split('\n').map(line => line.trim()).find(line =>
+    line.length >= 8 && line.length <= 120 && !line.startsWith('![') && !line.startsWith('<image')
+  )
+  return firstLine ? cleanTitle(firstLine) : null
+}
+
+function collectMessageText(value) {
+  const parts = []
+  collectAllText(value, parts)
+  return parts.join('\n').trim()
+}
+
+function collectAllText(value, out) {
+  if (!value) return
+  if (typeof value === 'string') {
+    out.push(value)
+    return
+  }
+  if (Array.isArray(value)) {
+    value.forEach(v => collectAllText(v, out))
+    return
+  }
+  if (typeof value === 'object') {
+    if (typeof value.text === 'string') out.push(value.text)
+    else if (typeof value.message === 'string') out.push(value.message)
+    else Object.values(value).forEach(v => collectAllText(v, out))
+  }
+}
+
+function cleanTitle(title) {
+  return String(title || '')
+    .replace(/^["'`]+|["'`]+$/g, '')
+    .replace(/\*\*$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120) || 'Codex Plan'
+}
+
+function stripCodexPlanTitle(content) {
+  return String(content || '')
+    .replace(/^#\s+.+\n?/, '')
+    .replace(/^\s*(?:\*\*)?title(?:\*\*)?\s*:\s*(?:\*\*)?.+?(?:\*\*)?\s*\n+/i, '')
 }
 
 function hashText(text) {
@@ -505,25 +631,10 @@ function buildPlanMeta(planFilenames) {
     statusMap[filename] = inferPlanStatus(filename, content, taskIndex)
   }
 
-  if (!fs.existsSync(PROJECTS_DIR)) return { repoMap, triggerMap, rootMap, sourceMap, statusMap }
+  const matches = getClaudeProjectMatches(planFilenames)
+  if (!matches.length) return { repoMap, triggerMap, rootMap, sourceMap, statusMap }
 
   const planStems = planFilenames.map(f => f.replace('.md', ''))
-  const matches   = []
-
-  for (const proj of fs.readdirSync(PROJECTS_DIR)) {
-    const projPath = path.join(PROJECTS_DIR, proj)
-    try { if (!fs.statSync(projPath).isDirectory()) continue } catch (_) { continue }
-    for (const fname of fs.readdirSync(projPath)) {
-      if (!fname.endsWith('.jsonl')) continue
-      try {
-        const raw       = fs.readFileSync(path.join(projPath, fname), 'utf8')
-        const mentioned = planStems.filter(s => raw.includes(s))
-        if (!mentioned.length) continue
-        const lines = raw.split('\n').filter(l => l.trim())
-        matches.push({ proj, mentioned, lines })
-      } catch (_) {}
-    }
-  }
 
   for (const stem of planStems) {
     const candidates = matches
@@ -544,6 +655,33 @@ function buildPlanMeta(planFilenames) {
   return { repoMap, triggerMap, rootMap, sourceMap, statusMap }
 }
 
+function getClaudeProjectMatches(planFilenames) {
+  if (!fs.existsSync(PROJECTS_DIR)) return []
+
+  const planStems = planFilenames.map(f => f.replace('.md', '')).sort()
+  const cacheKey = planStems.join('\n')
+  if (projectMetaCache?.cacheKey === cacheKey) return projectMetaCache.matches
+
+  const matches = []
+  for (const proj of fs.readdirSync(PROJECTS_DIR)) {
+    const projPath = path.join(PROJECTS_DIR, proj)
+    try { if (!fs.statSync(projPath).isDirectory()) continue } catch (_) { continue }
+    for (const fname of fs.readdirSync(projPath)) {
+      if (!fname.endsWith('.jsonl')) continue
+      try {
+        const raw       = fs.readFileSync(path.join(projPath, fname), 'utf8')
+        const mentioned = planStems.filter(s => raw.includes(s))
+        if (!mentioned.length) continue
+        const lines = raw.split('\n').filter(l => l.trim())
+        matches.push({ proj, mentioned, lines })
+      } catch (_) {}
+    }
+  }
+
+  projectMetaCache = { cacheKey, matches }
+  return matches
+}
+
 function extractEmbeddedPlanMeta(content) {
   const block = content.match(/<!-- plan-viewer-source\s*([\s\S]*?)\s*-->/)
   if (!block) return {}
@@ -559,8 +697,12 @@ function extractEmbeddedPlanMeta(content) {
 }
 
 function loadClaudeTasks() {
+  if (taskIndexCache) return taskIndexCache
   const tasks = []
-  if (!fs.existsSync(CLAUDE_TASKS_DIR)) return tasks
+  if (!fs.existsSync(CLAUDE_TASKS_DIR)) {
+    taskIndexCache = tasks
+    return tasks
+  }
   for (const file of walkFiles(CLAUDE_TASKS_DIR, f => f.endsWith('.json'))) {
     try {
       const task = JSON.parse(fs.readFileSync(file, 'utf8'))
@@ -576,6 +718,7 @@ function loadClaudeTasks() {
       })
     } catch (_) {}
   }
+  taskIndexCache = tasks
   return tasks
 }
 
@@ -623,6 +766,7 @@ function extractPlanReferences(filename) {
       if (!raw || raw.includes('://') || raw.length > 240) continue
       if (raw.startsWith('~/.')) continue
       const key = raw.replace(/^\.\//, '')
+      if (shouldIgnoreReference(key)) continue
       if (found.has(key)) continue
       const resolved = resolveReferencePath(root, key)
       found.set(key, {
@@ -637,17 +781,50 @@ function extractPlanReferences(filename) {
   return [...found.values()].slice(0, 30)
 }
 
+function shouldIgnoreReference(refPath) {
+  const normalized = String(refPath || '').replace(/\\/g, '/')
+  const base = path.basename(normalized)
+  if (!base || base.startsWith('.')) return true
+  if (normalized.includes('/.git/') || normalized.includes('/.snapshots/')) return true
+  if (normalized.startsWith('plans/.')) return true
+  return false
+}
+
 function resolveReferencePath(root, refPath) {
   if (!root || !refPath) return null
   const candidate = path.resolve(root, refPath)
   const normalizedRoot = path.resolve(root)
-  if (candidate !== normalizedRoot && !candidate.startsWith(normalizedRoot + path.sep)) return null
+  if (candidate === normalizedRoot || !candidate.startsWith(normalizedRoot + path.sep)) return null
   try {
-    if (!fs.existsSync(candidate) || !fs.statSync(candidate).isFile()) return null
-    return candidate
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate
   } catch (_) {
     return null
   }
+  if (!refPath.includes('/') && !refPath.includes('\\')) {
+    return findFileByBasename(normalizedRoot, refPath)
+  }
+  return null
+}
+
+function findFileByBasename(root, basename) {
+  const ignoredDirs = new Set(['.git', 'node_modules', 'dist', 'build', '.next', '.cache', '.snapshots'])
+  const stack = [root]
+  let visited = 0
+  while (stack.length && visited < 3000) {
+    const current = stack.pop()
+    let entries
+    try { entries = fs.readdirSync(current, { withFileTypes: true }) } catch (_) { continue }
+    for (const entry of entries) {
+      visited++
+      if (entry.isDirectory()) {
+        if (!ignoredDirs.has(entry.name)) stack.push(path.join(current, entry.name))
+      } else if (entry.name === basename) {
+        return path.join(current, entry.name)
+      }
+      if (visited >= 3000) break
+    }
+  }
+  return null
 }
 
 function getReferencedFile(filename, refPath) {
@@ -773,15 +950,14 @@ function createWindow() {
       awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
     })
 
-    const onCodexSessionChange = () => {
-      const imported = syncCodexPlans()
+    const onCodexSessionChange = filepath => {
+      const imported = syncCodexPlans(filepath)
+      if (!imported.length) return
       for (const filename of imported) livePlans.add(filename)
-      if (imported.length) {
-        saveLiveState()
-        updateDockBadge()
-      }
+      saveLiveState()
+      updateDockBadge()
       planMetaCache = null
-      broadcastPlanUpdate(imported.length ? { live: imported[0] } : {})
+      broadcastPlanUpdate({ live: imported[0] })
     }
 
     watcher.on('add', onCodexSessionChange)
@@ -794,11 +970,25 @@ function createWindow() {
       awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
     })
     const onTaskChange = () => {
+      taskIndexCache = null
       planMetaCache = null
       broadcastPlanUpdate({})
     }
     watcher.on('add', onTaskChange)
     watcher.on('change', onTaskChange)
+  }
+
+  if (fs.existsSync(PROJECTS_DIR)) {
+    const watcher = chokidar.watch(PROJECTS_DIR, {
+      ignoreInitial: true,
+      awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
+    })
+    const onProjectChange = () => {
+      projectMetaCache = null
+      planMetaCache = null
+    }
+    watcher.on('add', onProjectChange)
+    watcher.on('change', onProjectChange)
   }
 }
 
@@ -828,6 +1018,7 @@ ipcMain.handle('dismiss-live', (_, filename) => {
   livePlans.delete(filename)
   saveLiveState()
   updateDockBadge()
+  planMetaCache = null
   return true
 })
 

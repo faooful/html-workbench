@@ -932,21 +932,28 @@ body {
   align-items: flex-start;
   justify-content: center;
   padding-top: 18vh;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
 }
 
 #palette-backdrop {
   position: absolute;
   inset: 0;
   background: var(--bg-overlay);
+  z-index: 0;
+  -webkit-app-region: no-drag;
 }
 
 #palette-card {
   position: relative;
+  z-index: 1;
   width: 520px;
   background: var(--bg-surface);
   border-radius: 12px;
   box-shadow: var(--shadow-lg), 0 0 0 0.5px var(--border);
   overflow: hidden;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
 }
 
 #palette-input {
@@ -959,6 +966,7 @@ body {
   border: none;
   border-bottom: 1px solid var(--border);
   outline: none;
+  -webkit-app-region: no-drag;
 }
 #palette-input::placeholder { color: var(--text-muted); }
 
@@ -967,11 +975,14 @@ body {
   max-height: 340px;
   overflow-y: auto;
   padding: 4px 0;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
 }
 #palette-list::-webkit-scrollbar { width: 5px; }
 #palette-list::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
 
 .palette-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -979,11 +990,17 @@ body {
   cursor: pointer;
   border-left: 2px solid transparent;
   transition: background 0.08s;
+  user-select: none;
+  -webkit-app-region: no-drag;
 }
 .palette-item:hover { background: var(--item-hover); }
 .palette-item.palette-active {
   background: var(--item-active);
   border-left-color: var(--item-active-border);
+}
+
+.palette-item > * {
+  pointer-events: none;
 }
 
 .palette-item-title {
@@ -1187,6 +1204,30 @@ body {
 #step-prev-btn:disabled { opacity: 0.35; cursor: default; }
 #step-prev-btn:disabled:hover { background: none; color: var(--text-dim); }
 
+.step-mode #content-main {
+  width: 100%;
+}
+
+.step-mode #step-nav {
+  padding-left: 44px;
+  padding-right: 44px;
+}
+
+.step-mode #step-body {
+  max-width: none;
+  padding: 42px 48px 72px;
+}
+
+.step-mode #step-content {
+  width: 100%;
+  max-width: none;
+}
+
+.step-mode #step-footer {
+  padding-left: 44px;
+  padding-right: 44px;
+}
+
 .hidden { display: none !important; }
 
 /* ── Redesign chrome ───────────────────────────────────────────────────────── */
@@ -1211,8 +1252,8 @@ body {
 
 #chrome-window-spacer {
   height: 100%;
-  width: 112px;
-  flex: 0 0 112px;
+  width: 92px;
+  flex: 0 0 92px;
 }
 
 #chrome-title {
@@ -1234,16 +1275,16 @@ body {
   flex: 1 1 auto;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   -webkit-app-region: no-drag;
 }
 
 #tab-strip {
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   overflow: hidden;
 }
 
@@ -1815,8 +1856,8 @@ body {
   }
 
   #chrome-window-spacer {
-    width: 108px;
-    flex-basis: 108px;
+    width: 90px;
+    flex-basis: 90px;
   }
 
   .plan-tab {
@@ -1827,6 +1868,12 @@ body {
   #step-body {
     max-width: 760px;
     padding-right: 32px;
+  }
+
+  .step-mode #step-body {
+    max-width: none;
+    padding-right: 40px;
+    padding-left: 40px;
   }
 }
 
@@ -1853,8 +1900,8 @@ body {
   }
 
   #chrome-window-spacer {
-    width: 78px;
-    flex-basis: 78px;
+    width: 74px;
+    flex-basis: 74px;
   }
 
   #chrome-actions {

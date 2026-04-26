@@ -11,6 +11,12 @@ let comments        = []
 let pendingQuote    = ''
 let paletteIndex    = 0
 let paletteResults  = []
+let paletteSearchPlans = []
+let paletteOpenPlans = []
+let paletteRenderFrame = null
+let plansRefreshTimer = null
+let pendingPlanUpdate = null
+let refreshInFlight = false
 let isDiffMode      = false
 let stepSections    = []
 let stepIndex       = 0
@@ -138,6 +144,18 @@ function planByFilename(filename) {
   return allPlans.find(p => p.filename === filename)
 }
 
+function indexPalettePlans() {
+  paletteSearchPlans = allPlans.map(plan => ({
+    plan,
+    searchText: [
+      plan.title,
+      plan.repo,
+      plan.summary,
+      plan.trigger,
+    ].filter(Boolean).join(' ').toLowerCase(),
+  }))
+}
+
 function persistPrefs() {
   window.planAPI.setPrefs?.({ lastPlan: activePlan, openTabs }).catch(() => {})
 }
@@ -154,6 +172,7 @@ function showToast(msg, duration = 2800) {
 
 function openPalette() {
   paletteIndex = 0
+  paletteOpenPlans = allPlans
   palette.classList.remove('hidden')
   paletteInput.value = ''
   renderPaletteList()
@@ -163,21 +182,37 @@ function openPalette() {
 function closePalette() {
   palette.classList.add('hidden')
   paletteInput.value = ''
+  paletteOpenPlans = []
+  if (paletteRenderFrame) {
+    cancelAnimationFrame(paletteRenderFrame)
+    paletteRenderFrame = null
+  }
 }
 
 function renderPaletteList() {
+  const previousScroll = paletteList.scrollTop
   paletteList.innerHTML = ''
   const q = paletteInput.value.trim().toLowerCase()
+  const sourcePlans = paletteOpenPlans.length ? paletteOpenPlans : allPlans
+  const sourceSearchPlans = paletteOpenPlans.length
+    ? paletteOpenPlans.map(plan => ({
+      plan,
+      searchText: [
+        plan.title,
+        plan.repo,
+        plan.summary,
+        plan.trigger,
+      ].filter(Boolean).join(' ').toLowerCase(),
+    }))
+    : paletteSearchPlans
 
   if (q) {
-    paletteResults = allPlans.filter(p =>
-      p.title.toLowerCase().includes(q)    ||
-      p.repo.toLowerCase().includes(q)     ||
-      p.summary?.toLowerCase().includes(q) ||
-      p.trigger?.toLowerCase().includes(q)
-    )
+    paletteResults = sourceSearchPlans
+      .filter(entry => entry.searchText.includes(q))
+      .map(entry => entry.plan)
+      .slice(0, 50)
   } else {
-    paletteResults = [...allPlans]
+    paletteResults = [...sourcePlans]
       .sort((a, b) => new Date(b.modified) - new Date(a.modified))
       .slice(0, 12)
   }
@@ -205,19 +240,18 @@ function renderPaletteList() {
       <span class="palette-icon">□</span>
       <span class="palette-item-title">${escapeHtml(plan.title)}</span>
       <span class="palette-item-meta">${plan.versionCount ? `v${plan.versionCount + 1} · ` : ''}${formatRelativeDate(plan.modified)}</span>`
-    li.addEventListener('mouseenter', () => {
-      paletteIndex = i
-      updatePaletteActive()
-    })
-    li.addEventListener('click', () => openPaletteResult(i))
     paletteList.appendChild(li)
   })
+
+  paletteList.scrollTop = previousScroll
 }
 
-function updatePaletteActive() {
+function updatePaletteActive({ scroll = true } = {}) {
   const items = paletteList.querySelectorAll('.palette-item')
   items.forEach(el => el.classList.toggle('palette-active', Number(el.dataset.index) === paletteIndex))
-  paletteList.querySelector(`.palette-item[data-index="${paletteIndex}"]`)?.scrollIntoView({ block: 'nearest' })
+  if (scroll) {
+    paletteList.querySelector(`.palette-item[data-index="${paletteIndex}"]`)?.scrollIntoView({ block: 'nearest' })
+  }
 }
 
 function openPaletteResult(index = paletteIndex) {
@@ -227,17 +261,54 @@ function openPaletteResult(index = paletteIndex) {
   closePalette()
 }
 
-paletteInput.addEventListener('input', () => { paletteIndex = 0; renderPaletteList() })
+function schedulePaletteRender({ resetIndex = false } = {}) {
+  if (resetIndex) paletteIndex = 0
+  if (paletteRenderFrame) cancelAnimationFrame(paletteRenderFrame)
+  paletteRenderFrame = requestAnimationFrame(() => {
+    paletteRenderFrame = null
+    renderPaletteList()
+  })
+}
+
+paletteInput.addEventListener('input', () => schedulePaletteRender({ resetIndex: true }))
+
+function activatePaletteItemFromEvent(e) {
+  const item = e.target.closest?.('.palette-item')
+  if (!item || !paletteList.contains(item)) return
+  const nextIndex = Number(item.dataset.index)
+  if (!Number.isFinite(nextIndex) || nextIndex === paletteIndex) return
+  paletteIndex = nextIndex
+  updatePaletteActive({ scroll: false })
+}
+
+function openPaletteItemFromEvent(e) {
+  const item = e.target.closest?.('.palette-item')
+  if (!item || !paletteList.contains(item)) return
+  e.preventDefault()
+  openPaletteResult(Number(item.dataset.index))
+}
+
+paletteList.addEventListener('pointerover', activatePaletteItemFromEvent)
+paletteList.addEventListener('pointermove', activatePaletteItemFromEvent)
+paletteList.addEventListener('mouseover', activatePaletteItemFromEvent)
+paletteList.addEventListener('mousemove', activatePaletteItemFromEvent)
+
+paletteList.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return
+  openPaletteItemFromEvent(e)
+})
+
+paletteList.addEventListener('click', openPaletteItemFromEvent)
 
 paletteInput.addEventListener('keydown', e => {
   if (e.key === 'ArrowDown') {
     e.preventDefault()
     paletteIndex = Math.min(paletteIndex + 1, paletteResults.length - 1)
-    updatePaletteActive()
+    updatePaletteActive({ scroll: true })
   } else if (e.key === 'ArrowUp') {
     e.preventDefault()
     paletteIndex = Math.max(paletteIndex - 1, 0)
-    updatePaletteActive()
+    updatePaletteActive({ scroll: true })
   } else if (e.key === 'Enter') {
     openPaletteResult()
   } else if (e.key === 'Escape') {
@@ -404,6 +475,7 @@ function enterStepMode() {
   if (!stepSections.length) return
   stepIndex  = 0
   isStepMode = true
+  workspaceShell.classList.add('step-mode')
   // Exit diff mode if active
   if (isDiffMode) {
     isDiffMode = false
@@ -422,6 +494,7 @@ function enterStepMode() {
 function exitStepMode() {
   isStepMode   = false
   stepSections = []
+  workspaceShell.classList.remove('step-mode')
   stepPanel.classList.add('hidden')
   viewer.classList.remove('hidden')
   switcherStep.classList.remove('active')
@@ -562,6 +635,7 @@ async function openPlan(plan, opts = {}) {
   if (isStepMode) {
     isStepMode   = false
     stepSections = []
+    workspaceShell.classList.remove('step-mode')
     stepPanel.classList.add('hidden')
   }
   viewSwitcher.classList.remove('hidden')
@@ -899,9 +973,14 @@ function updateTocActive() {
   const headings = [...docContent.querySelectorAll('h1[id], h2[id], h3[id]')]
   if (!headings.length) return
   const containerTop = viewerBody.getBoundingClientRect().top
+  const atBottom = viewerBody.scrollTop + viewerBody.clientHeight >= viewerBody.scrollHeight - 8
   let active = headings[0]
-  for (const h of headings) {
-    if (h.getBoundingClientRect().top - containerTop <= 72) active = h
+  if (atBottom) {
+    active = headings[headings.length - 1]
+  } else {
+    for (const h of headings) {
+      if (h.getBoundingClientRect().top - containerTop <= 72) active = h
+    }
   }
   tocList.querySelectorAll('.toc-item').forEach(li =>
     li.classList.toggle('toc-active', li.dataset.hid === active.id)
@@ -1219,6 +1298,7 @@ sendBtn.addEventListener('click', async () => {
 
 async function loadPlans() {
   allPlans = await window.planAPI.getPlans()
+  indexPalettePlans()
   const prefs = await window.planAPI.getPrefs?.().catch(() => null)
   openTabs = Array.isArray(prefs?.openTabs) ? prefs.openTabs : []
   normalizeOpenTabs()
@@ -1233,34 +1313,71 @@ async function loadPlans() {
   }
 }
 
-window.planAPI.onPlanUpdated(async data => {
-  const prev = activePlan
-  allPlans = await window.planAPI.getPlans()
-  renderTabs()
-
-  const newLive = data?.live
-  if (newLive && newLive !== prev) {
-    const plan = planByFilename(newLive)
-    if (plan) {
-      ensureOpenTab(plan.filename)
-      openPlan(plan, { fromTab: true })
-    }
-  } else if (newLive === prev && prev) {
-    const content = await window.planAPI.getPlanContent(activePlan)
-    if (content) {
-      activeContent = content
-      snapshots = await window.planAPI.getSnapshots(activePlan)
-      await loadPlanReferences()
-      renderContextPanel()
-      if (isStepMode) exitStepMode()
-      else applyCommentHighlights()
-    }
-  } else if (data?.comments === activePlan) {
-    // A browser client saved comments — reload them
-    const saved = await window.planAPI.loadComments(activePlan)
-    comments = saved || []
-    applyCommentHighlights()
+function mergePlanUpdate(previous, next) {
+  if (!previous) return next || {}
+  return {
+    ...previous,
+    ...next,
+    live: previous.live || next?.live,
+    comments: previous.comments || next?.comments,
   }
-})
+}
+
+function schedulePlansRefresh(data = {}) {
+  pendingPlanUpdate = mergePlanUpdate(pendingPlanUpdate, data)
+  clearTimeout(plansRefreshTimer)
+  plansRefreshTimer = setTimeout(() => {
+    refreshPlansFromUpdate().catch(() => {})
+  }, 180)
+}
+
+async function refreshPlansFromUpdate() {
+  if (refreshInFlight) {
+    schedulePlansRefresh(pendingPlanUpdate || {})
+    return
+  }
+
+  refreshInFlight = true
+  const data = pendingPlanUpdate || {}
+  pendingPlanUpdate = null
+  try {
+    const prev = activePlan
+    allPlans = await window.planAPI.getPlans()
+    indexPalettePlans()
+    renderTabs()
+
+    const newLive = data?.live
+    if (newLive && newLive !== prev) {
+      const plan = planByFilename(newLive)
+      if (plan) {
+        ensureOpenTab(plan.filename)
+        openPlan(plan, { fromTab: true })
+      }
+    } else if (newLive === prev && prev) {
+      const content = await window.planAPI.getPlanContent(activePlan)
+      if (content) {
+        activeContent = content
+        snapshots = await window.planAPI.getSnapshots(activePlan)
+        await loadPlanReferences()
+        renderContextPanel()
+        if (isStepMode) exitStepMode()
+        else applyCommentHighlights()
+      }
+    } else if (data?.comments === activePlan) {
+      // A browser client saved comments — reload them
+      const saved = await window.planAPI.loadComments(activePlan)
+      comments = saved || []
+      applyCommentHighlights()
+    }
+  } finally {
+    refreshInFlight = false
+
+    if (pendingPlanUpdate) {
+      schedulePlansRefresh(pendingPlanUpdate)
+    }
+  }
+}
+
+window.planAPI.onPlanUpdated(data => schedulePlansRefresh(data))
 
 loadPlans()
