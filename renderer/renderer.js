@@ -10,10 +10,23 @@ let activeSnapshot  = null // null = current; number = viewing that snapshot
 let comments        = []
 let pendingQuote    = ''
 let paletteIndex    = 0
+let paletteResults  = []
+let paletteSearchPlans = []
+let paletteOpenPlans = []
+let paletteRenderFrame = null
+let plansRefreshTimer = null
+let pendingPlanUpdate = null
+let refreshInFlight = false
 let isDiffMode      = false
 let stepSections    = []
 let stepIndex       = 0
 let isStepMode      = false
+let openTabs        = []
+let panelOpen       = false
+let activePanel     = 'code'
+let planReferences  = []
+let activeRefPath   = null
+let semanticMode    = 'semantic'
 
 // Per-group expanded counts: repoKey → number shown (multiples of PAGE_SIZE)
 const PAGE_SIZE   = 5
@@ -24,9 +37,10 @@ const collapsedGroups = {}
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
-const planList            = document.getElementById('plan-list')
-const searchInput         = document.getElementById('search')
+const tabStrip            = document.getElementById('tab-strip')
+const tabNewBtn           = document.getElementById('tab-new-btn')
 const emptyState          = document.getElementById('empty-state')
+const workspaceShell      = document.getElementById('workspace-shell')
 const planHeader          = document.getElementById('plan-header')
 const docTitle            = document.getElementById('doc-title')
 const docDate             = document.getElementById('doc-date')
@@ -41,6 +55,7 @@ const versionBanner       = document.getElementById('version-banner')
 const liveBar             = document.getElementById('live-bar')
 const liveDismissBtn      = document.getElementById('live-dismiss-btn')
 const viewer              = document.getElementById('viewer')
+const viewerBody          = document.getElementById('viewer-body')
 const docContent          = document.getElementById('doc-content')
 const commentAddBtn       = document.getElementById('comment-add-btn')
 const commentBubble       = document.getElementById('comment-bubble')
@@ -59,6 +74,17 @@ const paletteList         = document.getElementById('palette-list')
 const paletteBackdrop     = document.getElementById('palette-backdrop')
 const diffBtn             = document.getElementById('diff-btn')
 const diffPanel           = document.getElementById('diff-panel')
+const panelToggleBtn      = document.getElementById('panel-toggle-btn')
+const contextPanel        = document.getElementById('context-panel')
+const contextCodeTab      = document.getElementById('context-code-tab')
+const contextChangesTab   = document.getElementById('context-changes-tab')
+const contextCloseBtn     = document.getElementById('context-close-btn')
+const codeContext         = document.getElementById('code-context')
+const changesContext      = document.getElementById('changes-context')
+const fileChipRow         = document.getElementById('file-chip-row')
+const filePreview         = document.getElementById('file-preview')
+const changesToolbar      = document.getElementById('changes-toolbar')
+const semanticDiffList    = document.getElementById('semantic-diff-list')
 const viewSwitcher        = document.getElementById('view-switcher')
 const switcherFull        = document.getElementById('switcher-full')
 const switcherStep        = document.getElementById('switcher-step')
@@ -82,7 +108,6 @@ if (window.WEB_MODE) {
   // Show sharing URL in sidebar footer
   window.planAPI.getSharingInfo?.().then(info => {
     if (!info?.url) return
-    document.getElementById('share-url-text').textContent = info.url
     document.getElementById('share-widget').classList.remove('hidden')
   })
   document.getElementById('share-copy-btn')?.addEventListener('click', () => {
@@ -111,9 +136,29 @@ function formatRelativeDate(iso) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 function escapeHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
 }
 function uid() { return Math.random().toString(36).slice(2,10) }
+
+function planByFilename(filename) {
+  return allPlans.find(p => p.filename === filename)
+}
+
+function indexPalettePlans() {
+  paletteSearchPlans = allPlans.map(plan => ({
+    plan,
+    searchText: [
+      plan.title,
+      plan.repo,
+      plan.summary,
+      plan.trigger,
+    ].filter(Boolean).join(' ').toLowerCase(),
+  }))
+}
+
+function persistPrefs() {
+  window.planAPI.setPrefs?.({ lastPlan: activePlan, openTabs }).catch(() => {})
+}
 
 let toastTimer = null
 function showToast(msg, duration = 2800) {
@@ -127,6 +172,7 @@ function showToast(msg, duration = 2800) {
 
 function openPalette() {
   paletteIndex = 0
+  paletteOpenPlans = allPlans
   palette.classList.remove('hidden')
   paletteInput.value = ''
   renderPaletteList()
@@ -136,64 +182,135 @@ function openPalette() {
 function closePalette() {
   palette.classList.add('hidden')
   paletteInput.value = ''
+  paletteOpenPlans = []
+  if (paletteRenderFrame) {
+    cancelAnimationFrame(paletteRenderFrame)
+    paletteRenderFrame = null
+  }
 }
 
 function renderPaletteList() {
+  const previousScroll = paletteList.scrollTop
   paletteList.innerHTML = ''
   const q = paletteInput.value.trim().toLowerCase()
-  let results
+  const sourcePlans = paletteOpenPlans.length ? paletteOpenPlans : allPlans
+  const sourceSearchPlans = paletteOpenPlans.length
+    ? paletteOpenPlans.map(plan => ({
+      plan,
+      searchText: [
+        plan.title,
+        plan.repo,
+        plan.summary,
+        plan.trigger,
+      ].filter(Boolean).join(' ').toLowerCase(),
+    }))
+    : paletteSearchPlans
 
   if (q) {
-    results = allPlans.filter(p =>
-      p.title.toLowerCase().includes(q)    ||
-      p.repo.toLowerCase().includes(q)     ||
-      p.summary?.toLowerCase().includes(q) ||
-      p.trigger?.toLowerCase().includes(q)
-    )
+    paletteResults = sourceSearchPlans
+      .filter(entry => entry.searchText.includes(q))
+      .map(entry => entry.plan)
+      .slice(0, 50)
   } else {
-    results = [...allPlans]
+    paletteResults = [...sourcePlans]
       .sort((a, b) => new Date(b.modified) - new Date(a.modified))
       .slice(0, 12)
   }
 
-  if (!results.length) {
+  if (paletteIndex >= paletteResults.length) paletteIndex = Math.max(0, paletteResults.length - 1)
+
+  if (!paletteResults.length) {
     paletteList.innerHTML = '<li class="palette-empty">No plans found</li>'
     return
   }
 
-  results.forEach((plan, i) => {
+  let lastRepo = null
+  paletteResults.forEach((plan, i) => {
+    if (plan.repo !== lastRepo) {
+      const group = document.createElement('li')
+      group.className = 'palette-group-label'
+      group.textContent = plan.repo
+      paletteList.appendChild(group)
+      lastRepo = plan.repo
+    }
     const li = document.createElement('li')
     li.className = 'palette-item' + (i === paletteIndex ? ' palette-active' : '')
+    li.dataset.index = String(i)
     li.innerHTML = `
+      <span class="palette-icon">□</span>
       <span class="palette-item-title">${escapeHtml(plan.title)}</span>
-      <span class="palette-item-meta">${escapeHtml(plan.repo)} · ${formatDate(plan.modified)}</span>`
-    li.addEventListener('mouseenter', () => {
-      paletteIndex = i
-      paletteList.querySelectorAll('.palette-item').forEach((el, j) =>
-        el.classList.toggle('palette-active', j === i)
-      )
-    })
-    li.addEventListener('click', () => { openPlan(plan); closePalette() })
+      <span class="palette-item-meta">${plan.versionCount ? `v${plan.versionCount + 1} · ` : ''}${formatRelativeDate(plan.modified)}</span>`
     paletteList.appendChild(li)
+  })
+
+  paletteList.scrollTop = previousScroll
+}
+
+function updatePaletteActive({ scroll = true } = {}) {
+  const items = paletteList.querySelectorAll('.palette-item')
+  items.forEach(el => el.classList.toggle('palette-active', Number(el.dataset.index) === paletteIndex))
+  if (scroll) {
+    paletteList.querySelector(`.palette-item[data-index="${paletteIndex}"]`)?.scrollIntoView({ block: 'nearest' })
+  }
+}
+
+function openPaletteResult(index = paletteIndex) {
+  const plan = paletteResults[index]
+  if (!plan) return
+  openPlan(plan)
+  closePalette()
+}
+
+function schedulePaletteRender({ resetIndex = false } = {}) {
+  if (resetIndex) paletteIndex = 0
+  if (paletteRenderFrame) cancelAnimationFrame(paletteRenderFrame)
+  paletteRenderFrame = requestAnimationFrame(() => {
+    paletteRenderFrame = null
+    renderPaletteList()
   })
 }
 
-paletteInput.addEventListener('input', () => { paletteIndex = 0; renderPaletteList() })
+paletteInput.addEventListener('input', () => schedulePaletteRender({ resetIndex: true }))
+
+function activatePaletteItemFromEvent(e) {
+  const item = e.target.closest?.('.palette-item')
+  if (!item || !paletteList.contains(item)) return
+  const nextIndex = Number(item.dataset.index)
+  if (!Number.isFinite(nextIndex) || nextIndex === paletteIndex) return
+  paletteIndex = nextIndex
+  updatePaletteActive({ scroll: false })
+}
+
+function openPaletteItemFromEvent(e) {
+  const item = e.target.closest?.('.palette-item')
+  if (!item || !paletteList.contains(item)) return
+  e.preventDefault()
+  openPaletteResult(Number(item.dataset.index))
+}
+
+paletteList.addEventListener('pointerover', activatePaletteItemFromEvent)
+paletteList.addEventListener('pointermove', activatePaletteItemFromEvent)
+paletteList.addEventListener('mouseover', activatePaletteItemFromEvent)
+paletteList.addEventListener('mousemove', activatePaletteItemFromEvent)
+
+paletteList.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return
+  openPaletteItemFromEvent(e)
+})
+
+paletteList.addEventListener('click', openPaletteItemFromEvent)
 
 paletteInput.addEventListener('keydown', e => {
-  const items = paletteList.querySelectorAll('.palette-item')
   if (e.key === 'ArrowDown') {
     e.preventDefault()
-    paletteIndex = Math.min(paletteIndex + 1, items.length - 1)
-    items.forEach((el, i) => el.classList.toggle('palette-active', i === paletteIndex))
-    items[paletteIndex]?.scrollIntoView({ block: 'nearest' })
+    paletteIndex = Math.min(paletteIndex + 1, paletteResults.length - 1)
+    updatePaletteActive({ scroll: true })
   } else if (e.key === 'ArrowUp') {
     e.preventDefault()
     paletteIndex = Math.max(paletteIndex - 1, 0)
-    items.forEach((el, i) => el.classList.toggle('palette-active', i === paletteIndex))
-    items[paletteIndex]?.scrollIntoView({ block: 'nearest' })
+    updatePaletteActive({ scroll: true })
   } else if (e.key === 'Enter') {
-    items[paletteIndex]?.click()
+    openPaletteResult()
   } else if (e.key === 'Escape') {
     closePalette()
   }
@@ -358,6 +475,7 @@ function enterStepMode() {
   if (!stepSections.length) return
   stepIndex  = 0
   isStepMode = true
+  workspaceShell.classList.add('step-mode')
   // Exit diff mode if active
   if (isDiffMode) {
     isDiffMode = false
@@ -376,6 +494,7 @@ function enterStepMode() {
 function exitStepMode() {
   isStepMode   = false
   stepSections = []
+  workspaceShell.classList.remove('step-mode')
   stepPanel.classList.add('hidden')
   viewer.classList.remove('hidden')
   switcherStep.classList.remove('active')
@@ -406,105 +525,96 @@ function buildFeedbackMessage() {
   return msg.trimEnd()
 }
 
-// ── Sidebar ───────────────────────────────────────────────────────────────────
+// ── Plan tabs ─────────────────────────────────────────────────────────────────
 
-function renderList(plans) {
-  const q = searchInput.value.trim().toLowerCase()
-  if (q) { renderSearch(plans, q); return }
-
-  planList.innerHTML = ''
-
-  const live   = plans.filter(p => p.live)
-  const normal = plans.filter(p => !p.live)
-
-  if (live.length) renderGroup('__live__', 'Live', live, true)
-
-  const groups = new Map()
-  for (const p of normal) {
-    if (!groups.has(p.repo)) groups.set(p.repo, [])
-    groups.get(p.repo).push(p)
-  }
-
-  ;[...groups.entries()]
-    .sort((a, b) => new Date(b[1][0].modified) - new Date(a[1][0].modified))
-    .forEach(([repo, rplans]) => renderGroup(repo, repo, rplans, false))
+function normalizeOpenTabs() {
+  const valid = new Set(allPlans.map(p => p.filename))
+  openTabs = [...new Set(openTabs)].filter(f => valid.has(f))
 }
 
-function renderSearch(plans, q) {
-  const filtered = plans.filter(p =>
-    p.title.toLowerCase().includes(q)    ||
-    p.repo.toLowerCase().includes(q)     ||
-    p.summary?.toLowerCase().includes(q) ||
-    p.trigger?.toLowerCase().includes(q)
-  )
-  planList.innerHTML = ''
-  if (!filtered.length) {
-    planList.innerHTML = '<li class="no-results">No plans found</li>'
+function ensureOpenTab(filename) {
+  if (!filename) return
+  if (!openTabs.includes(filename)) openTabs.push(filename)
+}
+
+function renderTabs() {
+  normalizeOpenTabs()
+  if (!tabStrip) {
+    persistPrefs()
     return
   }
-  filtered.forEach(p => appendPlanItem(p))
-}
+  tabStrip.innerHTML = ''
 
-function renderGroup(key, label, plans, isLive) {
-  const collapsed = collapsedGroups[key] || false
-  const shown     = groupCounts[key] || PAGE_SIZE
-
-  const li = document.createElement('li')
-  li.className = 'repo-header' + (isLive ? ' live-header' : '') + (collapsed ? ' collapsed' : '')
-  li.dataset.groupKey = key
-  li.innerHTML = `
-    <span class="repo-chevron">
-      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="6 9 12 15 18 9"/>
-      </svg>
-    </span>
-    <span class="repo-name">
-      ${isLive ? '<span class="live-dot"></span>' : ''}${escapeHtml(label)}
-    </span>
-    <span class="repo-count">${plans.length}</span>`
-  li.addEventListener('click', () => {
-    collapsedGroups[key] = !collapsedGroups[key]
-    renderList(allPlans)
-  })
-  planList.appendChild(li)
-
-  if (collapsed) return
-
-  plans.slice(0, shown).forEach(p => appendPlanItem(p))
-
-  if (plans.length > shown) {
-    const remaining = Math.min(PAGE_SIZE, plans.length - shown)
-    const btn = document.createElement('button')
-    btn.className = 'show-more-btn'
-    btn.textContent = `Show ${remaining} more`
-    btn.addEventListener('click', e => {
+  for (const filename of openTabs) {
+    const plan = planByFilename(filename)
+    if (!plan) continue
+    const status = plan.status || (plan.live ? 'needs_review' : 'reviewed')
+    const statusLabel = statusLabelFor(status)
+    const tab = document.createElement('button')
+    tab.className = 'plan-tab' + (filename === activePlan ? ' active' : '') + (plan.live ? ' live-tab' : '')
+    tab.title = plan.title
+    tab.innerHTML = `
+      <span class="tab-status status-${escapeHtml(status)}" title="${escapeHtml(statusLabel)}" aria-label="${escapeHtml(statusLabel)}"></span>
+      <span class="tab-title">${escapeHtml(plan.title)}</span>
+      <span class="tab-meta">${escapeHtml(plan.repo)}</span>
+      <span class="tab-close" title="Close">×</span>`
+    tab.addEventListener('click', () => openPlan(plan, { fromTab: true }))
+    tab.querySelector('.tab-close').addEventListener('click', e => {
       e.stopPropagation()
-      groupCounts[key] = shown + PAGE_SIZE
-      renderList(allPlans)
+      closeTab(filename)
     })
-    planList.appendChild(btn)
+    tabStrip.appendChild(tab)
   }
+  persistPrefs()
 }
 
-function appendPlanItem(plan) {
-  const li = document.createElement('li')
-  li.className = 'plan-item' + (plan.filename === activePlan ? ' active' : '')
-  li.innerHTML = `
-    <svg class="plan-icon" viewBox="0 0 11 13" width="11" height="13" fill="none" stroke="currentColor" stroke-width="1.1">
-      <path d="M2 1h5.2L10 3.8V11.5a.5.5 0 01-.5.5H2a.5.5 0 01-.5-.5V1.5A.5.5 0 012 1z"/>
-      <path d="M7.2 1v2.8H10"/>
-    </svg>
-    <span class="plan-title">${escapeHtml(plan.title)}</span>
-    <span class="plan-date">${formatRelativeDate(plan.modified)}</span>`
-  li.addEventListener('click', () => openPlan(plan))
-  planList.appendChild(li)
+function statusLabelFor(status) {
+  return {
+    needs_review: 'Needs review',
+    in_progress: 'In progress',
+    implemented: 'Implemented',
+    reviewed: 'Reviewed',
+  }[status] || 'Reviewed'
 }
 
-searchInput.addEventListener('input', () => renderList(allPlans))
+function closeTab(filename) {
+  const idx = openTabs.indexOf(filename)
+  if (idx === -1) return
+  openTabs.splice(idx, 1)
+
+  if (activePlan === filename) {
+    const nextFilename = openTabs[Math.min(idx, openTabs.length - 1)]
+    if (nextFilename) {
+      const nextPlan = planByFilename(nextFilename)
+      if (nextPlan) openPlan(nextPlan, { fromTab: true })
+    } else {
+      activePlan = null
+      activeContent = ''
+      activeTrigger = null
+      comments = []
+      snapshots = []
+      planHeader.classList.add('hidden')
+      viewer.classList.add('hidden')
+      stepPanel.classList.add('hidden')
+      versionBanner.classList.add('hidden')
+      liveBar.classList.add('hidden')
+      emptyState.classList.remove('hidden')
+      panelToggleBtn.classList.add('hidden')
+      contextPanel.classList.add('hidden')
+    }
+  }
+  renderTabs()
+}
+
+function renderList() {
+  renderTabs()
+}
+
+tabNewBtn?.addEventListener('click', openPalette)
 
 // ── Plan open ─────────────────────────────────────────────────────────────────
 
-async function openPlan(plan) {
+async function openPlan(plan, opts = {}) {
   activePlan      = plan.filename
   activeContent   = ''
   activeTrigger   = plan.trigger || null
@@ -513,6 +623,8 @@ async function openPlan(plan) {
   activeSnapshot  = null
   comments        = []
   pendingQuote    = ''
+  planReferences  = []
+  activeRefPath   = null
   tocPanel.classList.add('hidden')
   versionBanner.classList.add('hidden')
   isDiffMode = false
@@ -523,6 +635,7 @@ async function openPlan(plan) {
   if (isStepMode) {
     isStepMode   = false
     stepSections = []
+    workspaceShell.classList.remove('step-mode')
     stepPanel.classList.add('hidden')
   }
   viewSwitcher.classList.remove('hidden')
@@ -530,8 +643,9 @@ async function openPlan(plan) {
   switcherStep.classList.remove('active')
   hideTooltip()
 
+  if (!opts.fromTab) ensureOpenTab(plan.filename)
   window.planAPI.setLastPlan(plan.filename)
-  renderList(allPlans)
+  renderTabs()
 
   const content = await window.planAPI.getPlanContent(plan.filename)
   if (!content) return
@@ -545,11 +659,11 @@ async function openPlan(plan) {
 
   docTitle.textContent = plan.title
   docDate.textContent  = `${plan.repo}  ·  ${formatDate(plan.modified)}  ·  ~${words.toLocaleString()} words  ·  ${mins} min read`
-
   renderPreview()
 
   snapshots = await window.planAPI.getSnapshots(plan.filename)
-  renderVersions()
+  await loadPlanReferences()
+  renderContextPanel()
 
   const saved = await window.planAPI.loadComments(plan.filename)
   comments = saved || []
@@ -559,13 +673,16 @@ async function openPlan(plan) {
   liveBadge.classList.toggle('hidden', !isLive)
   liveBar.classList.toggle('hidden', !isLive)
   sendBtn.classList.toggle('hidden', !isLive)
+  panelToggleBtn.classList.remove('hidden')
+  diffBtn.classList.add('hidden')
 
   emptyState.classList.add('hidden')
   planHeader.classList.remove('hidden')
   viewer.classList.remove('hidden')
   placeSwitcherIndicator(false)
+  persistPrefs()
 
-  docContent.scrollTop = 0
+  viewerBody.scrollTop = 0
 }
 
 // ── Preview ───────────────────────────────────────────────────────────────────
@@ -592,6 +709,184 @@ function triggerBlock() {
 function renderPreview() {
   docContent.innerHTML = triggerBlock() + marked.parse(stripTitle(activeContent))
 }
+
+// ── Right context panel ───────────────────────────────────────────────────────
+
+async function loadPlanReferences() {
+  try {
+    planReferences = await window.planAPI.getPlanReferences?.(activePlan) || []
+  } catch (_) {
+    planReferences = []
+  }
+  activeRefPath = planReferences.find(r => r.exists)?.path || planReferences[0]?.path || null
+}
+
+function setPanel(open, panel = activePanel) {
+  panelOpen = open
+  activePanel = panel
+  workspaceShell.classList.toggle('inspector-open', panelOpen)
+  contextPanel.classList.toggle('hidden', !panelOpen)
+  panelToggleBtn.classList.toggle('panel-open', panelOpen)
+  panelToggleBtn.textContent = '◫'
+  renderContextPanel()
+}
+
+function renderContextPanel() {
+  if (!activePlan) return
+  workspaceShell.classList.toggle('inspector-open', panelOpen)
+  contextPanel.classList.toggle('hidden', !panelOpen)
+  panelToggleBtn.classList.toggle('panel-open', panelOpen)
+  contextCodeTab.classList.toggle('active', activePanel === 'code')
+  contextChangesTab.classList.toggle('active', activePanel === 'changes')
+  codeContext.classList.toggle('hidden', activePanel !== 'code')
+  changesContext.classList.toggle('hidden', activePanel !== 'changes')
+  panelToggleBtn.textContent = '◫'
+  if (activePanel === 'code') renderCodePanel()
+  else renderChangesPanel()
+}
+
+function renderCodePanel() {
+  fileChipRow.innerHTML = ''
+  if (!planReferences.length) {
+    filePreview.innerHTML = '<div class="panel-empty">No referenced source files found in this plan.</div>'
+    return
+  }
+
+  for (const ref of planReferences) {
+    const chip = document.createElement('button')
+    chip.className = 'file-chip' + (ref.path === activeRefPath ? ' active' : '') + (!ref.exists ? ' unresolved' : '')
+    chip.textContent = ref.path
+    chip.title = ref.exists ? ref.path : `${ref.path} was not found from the inferred project root`
+    chip.addEventListener('click', async () => {
+      activeRefPath = ref.path
+      renderCodePanel()
+      await renderFilePreview(ref.path)
+    })
+    fileChipRow.appendChild(chip)
+  }
+  renderFilePreview(activeRefPath)
+}
+
+async function renderFilePreview(refPath) {
+  if (!refPath) {
+    filePreview.innerHTML = '<div class="panel-empty">Select a referenced file.</div>'
+    return
+  }
+  const ref = planReferences.find(r => r.path === refPath)
+  if (ref && !ref.exists) {
+    filePreview.innerHTML = `<div class="panel-empty"><strong>${escapeHtml(ref.path)}</strong><br>Could not resolve this file from the inferred project root.</div>`
+    return
+  }
+  filePreview.innerHTML = '<div class="panel-empty">Loading file…</div>'
+  const file = await window.planAPI.getReferencedFile?.(activePlan, refPath)
+  if (!file || file.truncated) {
+    filePreview.innerHTML = `<div class="panel-empty"><strong>${escapeHtml(refPath)}</strong><br>${file?.truncated ? 'File is too large to preview.' : 'File could not be loaded.'}</div>`
+    return
+  }
+  const lines = file.content.split('\n').slice(0, 420)
+  filePreview.innerHTML = `<div class="file-preview-title">${escapeHtml(refPath)}</div><pre class="code-preview">${lines.map((line, i) =>
+    `<span class="code-row"><span class="code-line-no">${i + 1}</span><span class="code-line">${highlightCodeLine(line)}</span></span>`
+  ).join('')}</pre>`
+}
+
+function highlightCodeLine(line) {
+  let s = escapeHtml(line)
+  s = s.replace(/(\/\/.*$)/, '<span class="code-comment">$1</span>')
+  s = s.replace(/\b(import|export|const|let|var|function|return|if|else|for|while|class|async|await|from)\b/g, '<span class="code-keyword">$1</span>')
+  s = s.replace(/(&quot;.*?&quot;|'.*?'|`.*?`)/g, '<span class="code-string">$1</span>')
+  return s
+}
+
+function splitSectionsForDiff(content) {
+  const body = stripTitle(content).trim()
+  const chunks = body.split(/^(?=## )/m).filter(c => c.trim())
+  if (!chunks.length) return [{ title: 'Plan', content: body }]
+  return chunks.map(chunk => {
+    const m = chunk.match(/^## (.+)$/m)
+    return { title: m ? m[1].trim() : 'Overview', content: chunk.trim() }
+  })
+}
+
+function renderVersionBadges() {
+  const total = snapshots.length + 1
+  const all = [null, ...[...snapshots].reverse()]
+  return all.map((ts, i) => {
+    const vNum = total - i
+    const active = activeSnapshot === ts
+    const label = ts === null ? `v${vNum} Current` : `v${vNum}`
+    return `<button class="version-badge${active ? ' active' : ''}" data-ts="${ts || ''}">${label}</button>`
+  }).join('')
+}
+
+async function renderChangesPanel() {
+  changesToolbar.innerHTML = `
+    <div class="version-badges">${renderVersionBadges()}</div>
+    <div class="diff-mode-toggle">
+      <button class="${semanticMode === 'semantic' ? 'active' : ''}" data-mode="semantic">Semantic</button>
+      <button class="${semanticMode === 'unified' ? 'active' : ''}" data-mode="unified">Unified</button>
+    </div>`
+  changesToolbar.querySelectorAll('.version-badge').forEach(btn => {
+    btn.addEventListener('click', () => switchVersion(btn.dataset.ts ? Number(btn.dataset.ts) : null))
+  })
+  changesToolbar.querySelectorAll('[data-mode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      semanticMode = btn.dataset.mode
+      renderChangesPanel()
+    })
+  })
+
+  if (activeSnapshot === null) {
+    semanticDiffList.innerHTML = '<div class="panel-empty">Select a previous version to compare it with the current plan.</div>'
+    return
+  }
+  const current = await window.planAPI.getPlanContent(activePlan)
+  const old = await window.planAPI.getSnapshotContent(activePlan, activeSnapshot)
+  if (!current || !old) {
+    semanticDiffList.innerHTML = '<div class="panel-empty">Could not load this comparison.</div>'
+    return
+  }
+  semanticDiffList.innerHTML = semanticMode === 'unified'
+    ? renderUnifiedDiff(old, current)
+    : renderSemanticDiff(old, current)
+}
+
+function renderSemanticDiff(oldContent, newContent) {
+  const oldMap = new Map(splitSectionsForDiff(oldContent).map(s => [s.title, s.content]))
+  const newMap = new Map(splitSectionsForDiff(newContent).map(s => [s.title, s.content]))
+  const titles = [...new Set([...oldMap.keys(), ...newMap.keys()])]
+  const cards = []
+  for (const title of titles) {
+    const oldSec = oldMap.get(title)
+    const newSec = newMap.get(title)
+    if (!oldSec && newSec) cards.push(diffCard('added', title, newSec))
+    else if (oldSec && !newSec) cards.push(diffCard('removed', title, oldSec))
+    else if (oldSec !== newSec) cards.push(diffCard('modified', title, newSec))
+  }
+  return cards.length ? cards.join('') : '<div class="panel-empty">No section-level changes found.</div>'
+}
+
+function diffCard(type, title, content) {
+  const label = type === 'added' ? 'Added' : type === 'removed' ? 'Removed' : 'Modified'
+  return `<section class="semantic-card ${type}">
+    <header><span>${label}</span><strong>${escapeHtml(title)}</strong></header>
+    <div>${marked.parse(content.replace(/^## .+\n?/, '').trim() || content)}</div>
+  </section>`
+}
+
+function renderUnifiedDiff(oldContent, newContent) {
+  const ops = lcsOps(oldContent.split('\n'), newContent.split('\n'))
+  const hunks = buildHunks(ops, 3)
+  if (!hunks.length) return '<div class="panel-empty">No changes between these versions.</div>'
+  return `<div class="panel-unified-diff">${hunks.map(hunk => hunk.map(op => {
+    const prefix = op.type === 'delete' ? '−' : op.type === 'insert' ? '+' : ' '
+    return `<div class="diff-line diff-${op.type}"><span class="diff-gutter">${prefix}</span><span class="diff-text">${escapeHtml(op.value)}</span></div>`
+  }).join('')).join('<div class="diff-separator"></div>')}</div>`
+}
+
+panelToggleBtn.addEventListener('click', () => setPanel(!panelOpen, activePanel))
+contextCodeTab.addEventListener('click', () => setPanel(true, 'code'))
+contextChangesTab.addEventListener('click', () => setPanel(true, 'changes'))
+contextCloseBtn.addEventListener('click', () => setPanel(false))
 
 // ── Copy dropdown ─────────────────────────────────────────────────────────────
 
@@ -623,39 +918,10 @@ copyWithCommentsBtn.addEventListener('click', () => {
 // ── Version history ───────────────────────────────────────────────────────────
 
 function renderVersions() {
-  // Remove any existing version sub-items
-  document.querySelectorAll('.version-item').forEach(el => el.remove())
-  if (!snapshots.length) return
-
-  const activeLi = planList.querySelector('.plan-item.active')
-  if (!activeLi) return
-
-  // Newest first: Current → most recent snapshot → … → v1 (oldest)
-  const total = snapshots.length + 1
-  const all   = [null, ...[...snapshots].reverse()] // null = current (always first)
-
-  let insertAfter = activeLi
-  all.forEach((ts, i) => {
-    const isCurrent  = ts === null
-    const vNum       = total - i  // current = vN, oldest snapshot = v1
-    const isSelected = activeSnapshot === ts
-    const el = document.createElement('div')
-    el.className = 'version-item' + (isSelected ? ' version-active' : '')
-    el.innerHTML = `
-      <svg class="version-icon" viewBox="0 0 11 11" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1">
-        <circle cx="5.5" cy="5.5" r="4"/>
-        <path d="M5.5 3v2.5l1.5 1.2" stroke-linecap="round"/>
-      </svg>
-      <span class="version-label">v${vNum}</span>
-      <span class="version-date">${isCurrent ? 'Current' : formatDate(new Date(ts).toISOString())}</span>`
-    el.addEventListener('click', () => switchVersion(ts))
-    insertAfter.after(el)
-    insertAfter = el
-  })
+  renderContextPanel()
 }
 
 async function switchVersion(ts) {
-  // Exit diff mode when switching versions
   if (isDiffMode) {
     isDiffMode = false
     docContent.classList.remove('hidden')
@@ -665,24 +931,17 @@ async function switchVersion(ts) {
   }
 
   activeSnapshot = ts
-  const content = ts === null
-    ? await window.planAPI.getPlanContent(activePlan)
-    : await window.planAPI.getSnapshotContent(activePlan, ts)
-  if (!content) return
-  activeContent = content
-  applyCommentHighlights()
-  renderVersions()
-
   if (ts === null) {
     versionBanner.classList.add('hidden')
     diffBtn.classList.add('hidden')
   } else {
     const d = new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-    versionBanner.innerHTML = `Viewing version from ${d} — <a class="version-banner-link">Back to current</a>`
+    versionBanner.innerHTML = `Comparing version from ${d} — <a class="version-banner-link">Back to current</a>`
     versionBanner.classList.remove('hidden')
     versionBanner.querySelector('.version-banner-link').addEventListener('click', () => switchVersion(null))
-    diffBtn.classList.remove('hidden')
+    diffBtn.classList.add('hidden')
   }
+  renderContextPanel()
 }
 
 // ── Table of contents ─────────────────────────────────────────────────────────
@@ -713,24 +972,29 @@ function buildToc() {
 function updateTocActive() {
   const headings = [...docContent.querySelectorAll('h1[id], h2[id], h3[id]')]
   if (!headings.length) return
-  const containerTop = docContent.getBoundingClientRect().top
+  const containerTop = viewerBody.getBoundingClientRect().top
+  const atBottom = viewerBody.scrollTop + viewerBody.clientHeight >= viewerBody.scrollHeight - 8
   let active = headings[0]
-  for (const h of headings) {
-    if (h.getBoundingClientRect().top - containerTop <= 72) active = h
+  if (atBottom) {
+    active = headings[headings.length - 1]
+  } else {
+    for (const h of headings) {
+      if (h.getBoundingClientRect().top - containerTop <= 72) active = h
+    }
   }
   tocList.querySelectorAll('.toc-item').forEach(li =>
     li.classList.toggle('toc-active', li.dataset.hid === active.id)
   )
 }
 
-docContent.addEventListener('scroll', updateTocActive)
+viewerBody.addEventListener('scroll', updateTocActive)
 
 docContent.addEventListener('click', e => {
   if (e.target.classList.contains('plan-context-toggle')) {
-    const prev = docContent.scrollTop
+    const prev = viewerBody.scrollTop
     triggerExpanded = !triggerExpanded
     applyCommentHighlights()
-    docContent.scrollTop = prev
+    viewerBody.scrollTop = prev
   }
 })
 
@@ -831,9 +1095,10 @@ commentInput.addEventListener('keydown', e => {
 })
 
 function navigatePlan(dir) {
-  if (!activePlan || !allPlans.length) return
-  const idx  = allPlans.findIndex(p => p.filename === activePlan)
-  const next = allPlans[idx + dir]
+  if (!activePlan) return
+  const source = openTabs.length ? openTabs.map(planByFilename).filter(Boolean) : allPlans
+  const idx  = source.findIndex(p => p.filename === activePlan)
+  const next = source[idx + dir]
   if (next) openPlan(next)
 }
 
@@ -856,11 +1121,10 @@ document.addEventListener('keydown', e => {
     return
   }
 
-  // ⌘F — focus sidebar search
+  // ⌘F — use the picker as primary search
   if (e.metaKey && e.key === 'f') {
     e.preventDefault()
-    searchInput.focus()
-    searchInput.select()
+    openPalette()
     return
   }
 
@@ -883,8 +1147,6 @@ document.addEventListener('keydown', e => {
         return
       }
     }
-    if (e.key === 'ArrowUp')   { e.preventDefault(); navigatePlan(-1); return }
-    if (e.key === 'ArrowDown') { e.preventDefault(); navigatePlan(+1); return }
   }
 })
 
@@ -1011,7 +1273,7 @@ liveDismissBtn.addEventListener('click', async () => {
   liveBadge.classList.add('hidden')
   liveBar.classList.add('hidden')
   sendBtn.classList.add('hidden')
-  renderList(allPlans)
+  renderTabs()
 })
 
 // ── Send to Claude ────────────────────────────────────────────────────────────
@@ -1025,7 +1287,7 @@ sendBtn.addEventListener('click', async () => {
   liveBadge.classList.add('hidden')
   liveBar.classList.add('hidden')
   sendBtn.classList.add('hidden')
-  renderList(allPlans)
+  renderTabs()
 
   showToast(comments.length > 0
     ? 'Feedback copied — paste it in Claude Code'
@@ -1036,36 +1298,86 @@ sendBtn.addEventListener('click', async () => {
 
 async function loadPlans() {
   allPlans = await window.planAPI.getPlans()
-  renderList(allPlans)
-  const last = await window.planAPI.getLastPlan()
-  if (last) {
-    const plan = allPlans.find(p => p.filename === last)
-    if (plan) openPlan(plan)
+  indexPalettePlans()
+  const prefs = await window.planAPI.getPrefs?.().catch(() => null)
+  openTabs = Array.isArray(prefs?.openTabs) ? prefs.openTabs : []
+  normalizeOpenTabs()
+  renderTabs()
+  const target = prefs?.lastPlan || await window.planAPI.getLastPlan()
+  if (target) {
+    const plan = planByFilename(target)
+    if (plan) {
+      ensureOpenTab(plan.filename)
+      await openPlan(plan, { fromTab: true })
+    }
   }
 }
 
-window.planAPI.onPlanUpdated(async data => {
-  const prev = activePlan
-  allPlans = await window.planAPI.getPlans()
-  renderList(allPlans)
-
-  const newLive = data?.live
-  if (newLive && newLive !== prev) {
-    const plan = allPlans.find(p => p.filename === newLive)
-    if (plan) openPlan(plan)
-  } else if (newLive === prev && prev) {
-    const content = await window.planAPI.getPlanContent(activePlan)
-    if (content) {
-      activeContent = content
-      if (isStepMode) exitStepMode()
-      else applyCommentHighlights()
-    }
-  } else if (data?.comments === activePlan) {
-    // A browser client saved comments — reload them
-    const saved = await window.planAPI.loadComments(activePlan)
-    comments = saved || []
-    applyCommentHighlights()
+function mergePlanUpdate(previous, next) {
+  if (!previous) return next || {}
+  return {
+    ...previous,
+    ...next,
+    live: previous.live || next?.live,
+    comments: previous.comments || next?.comments,
   }
-})
+}
+
+function schedulePlansRefresh(data = {}) {
+  pendingPlanUpdate = mergePlanUpdate(pendingPlanUpdate, data)
+  clearTimeout(plansRefreshTimer)
+  plansRefreshTimer = setTimeout(() => {
+    refreshPlansFromUpdate().catch(() => {})
+  }, 180)
+}
+
+async function refreshPlansFromUpdate() {
+  if (refreshInFlight) {
+    schedulePlansRefresh(pendingPlanUpdate || {})
+    return
+  }
+
+  refreshInFlight = true
+  const data = pendingPlanUpdate || {}
+  pendingPlanUpdate = null
+  try {
+    const prev = activePlan
+    allPlans = await window.planAPI.getPlans()
+    indexPalettePlans()
+    renderTabs()
+
+    const newLive = data?.live
+    if (newLive && newLive !== prev) {
+      const plan = planByFilename(newLive)
+      if (plan) {
+        ensureOpenTab(plan.filename)
+        openPlan(plan, { fromTab: true })
+      }
+    } else if (newLive === prev && prev) {
+      const content = await window.planAPI.getPlanContent(activePlan)
+      if (content) {
+        activeContent = content
+        snapshots = await window.planAPI.getSnapshots(activePlan)
+        await loadPlanReferences()
+        renderContextPanel()
+        if (isStepMode) exitStepMode()
+        else applyCommentHighlights()
+      }
+    } else if (data?.comments === activePlan) {
+      // A browser client saved comments — reload them
+      const saved = await window.planAPI.loadComments(activePlan)
+      comments = saved || []
+      applyCommentHighlights()
+    }
+  } finally {
+    refreshInFlight = false
+
+    if (pendingPlanUpdate) {
+      schedulePlansRefresh(pendingPlanUpdate)
+    }
+  }
+}
+
+window.planAPI.onPlanUpdated(data => schedulePlansRefresh(data))
 
 loadPlans()
