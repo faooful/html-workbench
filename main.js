@@ -898,6 +898,10 @@ function getPlans() {
       const filepath = path.join(VIEWER_PLANS_DIR, filename)
       const stat     = fs.statSync(filepath)
       const content  = fs.readFileSync(filepath, 'utf8')
+      const review = loadPlanReview(filename)
+      const status = inferReviewStatus(filename, review)
+        || planMetaCache.statusMap[filename]
+        || (livePlans.has(filename) ? 'needs_review' : 'reviewed')
       return {
         filename,
         title:        extractTitle(content, filename),
@@ -907,8 +911,8 @@ function getPlans() {
         trigger:      planMetaCache.triggerMap[filename] || null,
         live:         livePlans.has(filename),
         source:       planMetaCache.sourceMap[filename]  || 'archive',
-        status:       planMetaCache.statusMap[filename]  || (livePlans.has(filename) ? 'needs_review' : 'reviewed'),
-        review:       loadPlanReview(filename),
+        status,
+        review,
         versionCount: getSnapshotTimestamps(filename).length,
         summary:      content
           .replace(/^#.+$/gm, '')
@@ -919,6 +923,14 @@ function getPlans() {
       }
     })
     .sort((a, b) => new Date(b.modified) - new Date(a.modified))
+}
+
+function inferReviewStatus(filename, review) {
+  if (livePlans.has(filename)) return 'needs_review'
+  if (!review) return null
+  if (review.decision === 'changes_requested') return 'changes_requested'
+  if (review.decision === 'approved') return 'approved'
+  return null
 }
 
 // ── Window ────────────────────────────────────────────────────────────────────

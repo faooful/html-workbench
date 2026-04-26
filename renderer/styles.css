@@ -1372,8 +1372,10 @@ body {
 }
 
 .tab-status.status-needs_review { background: #0a84ff; }
+.tab-status.status-changes_requested { background: #ff3b30; }
 .tab-status.status-in_progress  { background: #f5a524; }
 .tab-status.status-implemented  { background: #2fb344; }
+.tab-status.status-approved     { background: #2fb344; }
 .tab-status.status-reviewed     { background: #a1a1aa; }
 
 .tab-title {
@@ -1877,9 +1879,19 @@ body {
 }
 
 .palette-icon {
-  color: var(--text-muted);
-  font-size: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #a1a1aa;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.9), 0 0 0 3px rgba(0,0,0,0.04);
+  flex-shrink: 0;
 }
+.palette-icon.status-needs_review { background: #0a84ff; }
+.palette-icon.status-changes_requested { background: #ff3b30; }
+.palette-icon.status-in_progress  { background: #f5a524; }
+.palette-icon.status-implemented,
+.palette-icon.status-approved     { background: #2fb344; }
+.palette-icon.status-reviewed     { background: #a1a1aa; }
 
 @media (min-width: 1180px) {
   #plan-header {

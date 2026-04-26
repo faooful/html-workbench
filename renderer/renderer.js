@@ -238,11 +238,13 @@ function renderPaletteList() {
       paletteList.appendChild(group)
       lastRepo = plan.repo
     }
+    const status = plan.status || (plan.live ? 'needs_review' : 'reviewed')
+    const statusLabel = statusLabelFor(status)
     const li = document.createElement('li')
     li.className = 'palette-item' + (i === paletteIndex ? ' palette-active' : '')
     li.dataset.index = String(i)
     li.innerHTML = `
-      <span class="palette-icon">□</span>
+      <span class="palette-icon status-${escapeHtml(status)}" title="${escapeHtml(statusLabel)}" aria-label="${escapeHtml(statusLabel)}"></span>
       <span class="palette-item-title">${escapeHtml(plan.title)}</span>
       <span class="palette-item-meta">${plan.versionCount ? `v${plan.versionCount + 1} · ` : ''}${formatRelativeDate(plan.modified)}</span>`
     paletteList.appendChild(li)
@@ -659,8 +661,10 @@ function renderTabs() {
 function statusLabelFor(status) {
   return {
     needs_review: 'Needs review',
+    changes_requested: 'Changes requested',
     in_progress: 'In progress',
     implemented: 'Implemented',
+    approved: 'Approved',
     reviewed: 'Reviewed',
   }[status] || 'Reviewed'
 }
