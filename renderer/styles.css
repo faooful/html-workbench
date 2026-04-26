@@ -1648,7 +1648,7 @@ body {
 
 #context-tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr 34px;
+  grid-template-columns: 1fr 1fr 1fr 34px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-subtle);
 }
@@ -1778,6 +1778,92 @@ body {
 .code-keyword { color: #ad3da4; }
 .code-string { color: #272ad8; }
 .code-comment { color: var(--text-muted); font-style: italic; }
+
+#review-detail {
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+.review-summary-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.review-summary-card.approved {
+  border-color: var(--live-border);
+  background: var(--success-bg);
+}
+
+.review-summary-card.changes_requested {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+}
+
+.review-summary-label {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.review-summary-title {
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.review-summary-meta {
+  margin-top: 2px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.review-annotation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.review-annotation {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--comment-hl-border);
+  border-radius: 8px;
+  padding: 10px 11px;
+  background: var(--bg-surface);
+}
+
+.review-annotation.annotation-question { border-left-color: var(--accent); }
+.review-annotation.annotation-risk { border-left-color: #ff9500; }
+.review-annotation.annotation-replace,
+.review-annotation.annotation-delete { border-left-color: var(--danger); }
+.review-annotation.annotation-insert { border-left-color: var(--success); }
+
+.review-annotation-type {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.review-annotation blockquote {
+  margin: 7px 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.review-annotation p {
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
 
 #changes-toolbar {
   display: flex;

@@ -82,13 +82,16 @@ const panelToggleBtn      = document.getElementById('panel-toggle-btn')
 const contextPanel        = document.getElementById('context-panel')
 const contextCodeTab      = document.getElementById('context-code-tab')
 const contextChangesTab   = document.getElementById('context-changes-tab')
+const contextReviewTab    = document.getElementById('context-review-tab')
 const contextCloseBtn     = document.getElementById('context-close-btn')
 const codeContext         = document.getElementById('code-context')
 const changesContext      = document.getElementById('changes-context')
+const reviewContext       = document.getElementById('review-context')
 const fileChipRow         = document.getElementById('file-chip-row')
 const filePreview         = document.getElementById('file-preview')
 const changesToolbar      = document.getElementById('changes-toolbar')
 const semanticDiffList    = document.getElementById('semantic-diff-list')
+const reviewDetail        = document.getElementById('review-detail')
 const viewSwitcher        = document.getElementById('view-switcher')
 const switcherFull        = document.getElementById('switcher-full')
 const switcherStep        = document.getElementById('switcher-step')
@@ -842,11 +845,44 @@ function renderContextPanel() {
   panelToggleBtn.classList.toggle('panel-open', panelOpen)
   contextCodeTab.classList.toggle('active', activePanel === 'code')
   contextChangesTab.classList.toggle('active', activePanel === 'changes')
+  contextReviewTab?.classList.toggle('active', activePanel === 'review')
   codeContext.classList.toggle('hidden', activePanel !== 'code')
   changesContext.classList.toggle('hidden', activePanel !== 'changes')
+  reviewContext?.classList.toggle('hidden', activePanel !== 'review')
   panelToggleBtn.textContent = '◫'
   if (activePanel === 'code') renderCodePanel()
-  else renderChangesPanel()
+  else if (activePanel === 'changes') renderChangesPanel()
+  else renderReviewPanel()
+}
+
+function renderReviewPanel() {
+  if (!reviewDetail) return
+  const annotations = currentReview?.annotations?.length ? currentReview.annotations : comments
+  if (!currentReview && !annotations.length) {
+    reviewDetail.innerHTML = '<div class="panel-empty"><strong>No review yet.</strong><br>Approve the live plan or add annotations and request changes to create a review record.</div>'
+    return
+  }
+
+  const decision = currentReview?.decision || 'draft'
+  const decidedAt = currentReview?.decidedAt ? formatDate(currentReview.decidedAt) : 'Not decided'
+  reviewDetail.innerHTML = `
+    <div class="review-summary-card ${escapeHtml(decision)}">
+      <div class="review-summary-label">Review</div>
+      <div class="review-summary-title">${escapeHtml(decision === 'draft' ? 'Draft annotations' : reviewDecisionLabel(decision))}</div>
+      <div class="review-summary-meta">${escapeHtml(decidedAt)} · ${annotations.length} ${annotations.length === 1 ? 'annotation' : 'annotations'}</div>
+    </div>
+    <div class="review-annotation-list">
+      ${annotations.length ? annotations.map(annotationCard).join('') : '<div class="panel-empty">No annotations were attached to this decision.</div>'}
+    </div>`
+}
+
+function annotationCard(annotation) {
+  const type = annotation.type || 'comment'
+  return `<div class="review-annotation ${annotationClass(type)}">
+    <div class="review-annotation-type">${escapeHtml(annotationTypeLabel(type))}</div>
+    <blockquote>${escapeHtml(annotation.quote || '').substring(0, 220)}</blockquote>
+    <p>${escapeHtml(annotation.note || '')}</p>
+  </div>`
 }
 
 function renderCodePanel() {
@@ -998,6 +1034,7 @@ function renderUnifiedDiff(oldContent, newContent) {
 panelToggleBtn.addEventListener('click', () => setPanel(!panelOpen, activePanel))
 contextCodeTab.addEventListener('click', () => setPanel(true, 'code'))
 contextChangesTab.addEventListener('click', () => setPanel(true, 'changes'))
+contextReviewTab?.addEventListener('click', () => setPanel(true, 'review'))
 contextCloseBtn.addEventListener('click', () => setPanel(false))
 
 // ── Copy dropdown ─────────────────────────────────────────────────────────────
