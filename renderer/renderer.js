@@ -284,11 +284,14 @@ function renderPaletteList() {
     const status = plan.status || (plan.live ? 'needs_review' : 'reviewed')
     const statusLabel = statusLabelFor(status)
     const li = document.createElement('li')
-    li.className = 'palette-item' + (i === paletteIndex ? ' palette-active' : '')
+    li.className = 'palette-item ui-command-row' + (i === paletteIndex ? ' palette-active' : '')
     li.dataset.index = String(i)
     li.innerHTML = `
       <span class="palette-icon status-${escapeHtml(status)}" title="${escapeHtml(statusLabel)}" aria-label="${escapeHtml(statusLabel)}"></span>
-      <span class="palette-item-title">${escapeHtml(plan.title)}</span>
+      <span class="palette-item-main">
+        <span class="palette-item-title">${escapeHtml(plan.title)}</span>
+        <span class="palette-item-subtitle">${escapeHtml(plan.repo)}</span>
+      </span>
       <span class="palette-item-meta">${escapeHtml(planAttentionReason(plan))}</span>`
     paletteList.appendChild(li)
   })
@@ -306,12 +309,12 @@ const PALETTE_FILTERS = [
 ]
 
 const REVIEW_BUCKETS = [
-  { id: 'attention', label: 'Attention' },
-  { id: 'needs_review', label: 'Needs review' },
-  { id: 'changes_requested', label: 'Changes requested' },
-  { id: 'approved', label: 'Approved' },
-  { id: 'implemented', label: 'Implemented' },
-  { id: 'reviewed', label: 'Reviewed' },
+  { id: 'attention', label: 'Attention', icon: '!', tone: 'attention' },
+  { id: 'needs_review', label: 'Needs review', icon: '•', tone: 'info' },
+  { id: 'changes_requested', label: 'Changes requested', icon: '↩', tone: 'danger' },
+  { id: 'approved', label: 'Approved', icon: '✓', tone: 'success' },
+  { id: 'implemented', label: 'Implemented', icon: '◆', tone: 'success' },
+  { id: 'reviewed', label: 'Reviewed', icon: '○', tone: 'muted' },
 ]
 
 function renderPaletteFilters() {
@@ -415,9 +418,10 @@ function renderInboxRail() {
   }, {})
 
   inboxBuckets.innerHTML = REVIEW_BUCKETS.map(bucket => `
-    <button class="inbox-bucket${inboxFilter === bucket.id ? ' active' : ''}" data-bucket="${bucket.id}">
-      <span>${escapeHtml(bucket.label)}</span>
-      <strong>${counts[bucket.id] || 0}</strong>
+    <button class="inbox-bucket ui-list-row${inboxFilter === bucket.id ? ' active' : ''}" data-bucket="${bucket.id}">
+      <span class="ui-status-icon tone-${escapeHtml(bucket.tone)}">${escapeHtml(bucket.icon)}</span>
+      <span class="inbox-bucket-label">${escapeHtml(bucket.label)}</span>
+      <strong class="ui-count-badge">${counts[bucket.id] || 0}</strong>
     </button>
   `).join('')
 
@@ -434,10 +438,13 @@ function renderInboxRail() {
 
   inboxPlanList.innerHTML = plans.map(plan => {
     const status = planStatus(plan)
-    return `<button class="inbox-plan-row${plan.filename === activePlan ? ' active' : ''}" data-filename="${escapeHtml(plan.filename)}">
+    return `<button class="inbox-plan-row ui-card-row${plan.filename === activePlan ? ' active' : ''}" data-filename="${escapeHtml(plan.filename)}">
       <span class="inbox-status status-${escapeHtml(status)}" title="${escapeHtml(statusLabelFor(status))}"></span>
       <span class="inbox-plan-main">
-        <span class="inbox-plan-title">${escapeHtml(plan.title)}</span>
+        <span class="inbox-plan-top">
+          <span class="inbox-plan-title">${escapeHtml(plan.title)}</span>
+          <span class="ui-badge status-${escapeHtml(status)}">${escapeHtml(statusLabelFor(status))}</span>
+        </span>
         <span class="inbox-plan-meta">${escapeHtml(plan.repo)} · ${escapeHtml(planAttentionReason(plan))}</span>
       </span>
     </button>`
@@ -1183,19 +1190,19 @@ function reviewCockpitHtml(annotations, checklist, decision = currentReview?.dec
   const activeReasons = blockers.length
     ? blockers.map(item => `${annotationTypeLabel(item.type)} annotation`)
     : state.reasons
-  return `<div class="review-cockpit review-${escapeHtml(tone)}">
+  return `<div class="review-cockpit ui-card review-${escapeHtml(tone)}">
     <div class="review-cockpit-top">
       <div>
-        <div class="review-summary-label">Review cockpit</div>
-        <div class="review-summary-title">${escapeHtml(title)}</div>
+        <div class="ui-section-label">Review cockpit</div>
+        <div class="review-summary-title"><span class="ui-status-icon tone-${escapeHtml(tone === 'success' ? 'success' : tone === 'warning' ? 'attention' : 'info')}">${escapeHtml(tone === 'success' ? '✓' : tone === 'warning' ? '!' : '•')}</span>${escapeHtml(title)}</div>
         <div class="review-summary-meta">${escapeHtml(decidedAt)} · ${annotations.length} ${annotations.length === 1 ? 'annotation' : 'annotations'} · ${timelineEvents.length} timeline ${timelineEvents.length === 1 ? 'event' : 'events'}</div>
       </div>
-      <span class="review-cockpit-badge">${escapeHtml(progress.done)}/${escapeHtml(progress.total)}</span>
+      <span class="ui-badge">${escapeHtml(progress.done)}/${escapeHtml(progress.total)} checks</span>
     </div>
     <div class="review-signal-grid">
-      <span><strong>${escapeHtml(blockers.length)}</strong> blockers</span>
-      <span><strong>${escapeHtml(state.unresolvedRefs || 0)}</strong> unresolved refs</span>
-      <span><strong>${escapeHtml(planReferences.filter(ref => ref.exists).length)}</strong> code refs</span>
+      <span class="ui-metric"><strong>${escapeHtml(blockers.length)}</strong> blockers</span>
+      <span class="ui-metric"><strong>${escapeHtml(state.unresolvedRefs || 0)}</strong> unresolved refs</span>
+      <span class="ui-metric"><strong>${escapeHtml(planReferences.filter(ref => ref.exists).length)}</strong> code refs</span>
     </div>
     ${activeReasons.length ? `<div class="review-blockers"><span>Blocked by</span>${activeReasons.slice(0, 4).map(reason => `<em>${escapeHtml(reason)}</em>`).join('')}</div>` : ''}
   </div>`
@@ -1204,14 +1211,14 @@ function reviewCockpitHtml(annotations, checklist, decision = currentReview?.dec
 function reviewThreadsHtml(annotations) {
   const unresolved = blockingAnnotations(annotations)
   if (!unresolved.length) return ''
-  return `<div class="review-thread-list">
-    <div class="review-checklist-title">Open review threads</div>
+  return `<div class="review-thread-list ui-card">
+    <div class="ui-section-label">Open review threads</div>
     ${unresolved.map(annotation => {
       const type = annotation.type || 'comment'
-      return `<div class="review-thread ${annotationClass(type)}">
+      return `<div class="review-thread ui-card-row ${annotationClass(type)}">
         <div class="review-thread-header">
           <span>${escapeHtml(annotationTypeLabel(type))}</span>
-          <strong>Blocking</strong>
+          <strong class="ui-badge status-changes_requested">Blocking</strong>
         </div>
         <blockquote>${escapeHtml(annotation.quote || '').substring(0, 180)}</blockquote>
         <p>${escapeHtml(annotation.note || '')}</p>
@@ -1222,16 +1229,16 @@ function reviewThreadsHtml(annotations) {
 
 function timelineHtml() {
   const events = [...timelineEvents].reverse().slice(0, 8)
-  if (!events.length) return '<div class="review-timeline"><div class="review-checklist-title">Timeline</div><div class="panel-empty">No timeline events yet.</div></div>'
+  if (!events.length) return '<div class="review-timeline ui-card"><div class="ui-section-label">Timeline</div><div class="panel-empty">No timeline events yet.</div></div>'
   let lastDay = null
-  return `<div class="review-timeline">
-    <div class="review-checklist-title">Timeline</div>
+  return `<div class="review-timeline ui-card">
+    <div class="ui-section-label">Timeline</div>
     ${events.map(event => {
       const day = timelineDayLabel(event.at)
       const dayHtml = day !== lastDay ? `<div class="timeline-day">${escapeHtml(day)}</div>` : ''
       lastDay = day
       const source = event.source || event.data?.source || 'desktop'
-      return `${dayHtml}<div class="timeline-event">
+      return `${dayHtml}<div class="timeline-event ui-audit-row">
       <span class="timeline-dot source-${timelineSourceClass(source)}"></span>
       <div>
         <div class="timeline-summary">${escapeHtml(event.summary || timelineEventLabel(event.type))}</div>
