@@ -16,10 +16,12 @@ let paletteResults  = []
 let paletteSearchPlans = []
 let paletteOpenPlans = []
 let paletteFilter = 'attention'
+let inboxFilter = 'attention'
 let paletteRenderFrame = null
 let plansRefreshTimer = null
 let pendingPlanUpdate = null
 let refreshInFlight = false
+let shareUrl = null
 let isDiffMode      = false
 let stepSections    = []
 let stepIndex       = 0
@@ -42,6 +44,10 @@ const collapsedGroups = {}
 
 const tabStrip            = document.getElementById('tab-strip')
 const tabNewBtn           = document.getElementById('tab-new-btn')
+const inboxRail           = document.getElementById('inbox-rail')
+const inboxBuckets        = document.getElementById('inbox-buckets')
+const inboxPlanList       = document.getElementById('inbox-plan-list')
+const inboxRefreshBtn     = document.getElementById('inbox-refresh-btn')
 const emptyState          = document.getElementById('empty-state')
 const workspaceShell      = document.getElementById('workspace-shell')
 const planHeader          = document.getElementById('plan-header')
@@ -80,6 +86,13 @@ const paletteInput        = document.getElementById('palette-input')
 const paletteFilters      = document.getElementById('palette-filters')
 const paletteList         = document.getElementById('palette-list')
 const paletteBackdrop     = document.getElementById('palette-backdrop')
+const shareCopyBtn        = document.getElementById('share-copy-btn')
+const shareModal          = document.getElementById('share-modal')
+const shareModalBackdrop  = document.getElementById('share-modal-backdrop')
+const shareModalClose     = document.getElementById('share-modal-close')
+const shareModalDone      = document.getElementById('share-modal-done')
+const shareModalCopy      = document.getElementById('share-modal-copy')
+const shareModalUrl       = document.getElementById('share-modal-url')
 const diffBtn             = document.getElementById('diff-btn')
 const diffPanel           = document.getElementById('diff-panel')
 const panelToggleBtn      = document.getElementById('panel-toggle-btn')
@@ -117,17 +130,17 @@ if (window.WEB_MODE) {
   document.getElementById('send-btn')?.classList.add('hidden')
   document.getElementById('live-dismiss-btn')?.classList.add('hidden')
 } else {
-  // Show sharing URL in sidebar footer
   window.planAPI.getSharingInfo?.().then(info => {
     if (!info?.url) return
+    shareUrl = info.url
+    if (shareModalUrl) shareModalUrl.textContent = shareUrl
     document.getElementById('share-widget').classList.remove('hidden')
   })
-  document.getElementById('share-copy-btn')?.addEventListener('click', () => {
-    window.planAPI.getSharingInfo?.().then(info => {
-      if (info?.url) navigator.clipboard.writeText(info.url).catch(() => {})
-      showToast('Link copied')
-    })
-  })
+  shareCopyBtn?.addEventListener('click', openShareModal)
+  shareModalCopy?.addEventListener('click', copyShareUrl)
+  shareModalClose?.addEventListener('click', closeShareModal)
+  shareModalDone?.addEventListener('click', closeShareModal)
+  shareModalBackdrop?.addEventListener('click', closeShareModal)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -179,6 +192,23 @@ function showToast(msg, duration = 2800) {
   toastEl.classList.add('visible')
   clearTimeout(toastTimer)
   toastTimer = setTimeout(() => toastEl.classList.remove('visible'), duration)
+}
+
+function openShareModal() {
+  if (!shareUrl) return
+  if (shareModalUrl) shareModalUrl.textContent = shareUrl
+  shareModal?.classList.remove('hidden')
+  shareModalCopy?.focus()
+}
+
+function closeShareModal() {
+  shareModal?.classList.add('hidden')
+}
+
+function copyShareUrl() {
+  if (!shareUrl) return
+  navigator.clipboard.writeText(shareUrl).catch(() => {})
+  showToast('Link copied')
 }
 
 // ── Command palette ───────────────────────────────────────────────────────────
@@ -241,14 +271,15 @@ function renderPaletteList() {
     return
   }
 
-  let lastRepo = null
+  let lastGroup = null
   paletteResults.forEach((plan, i) => {
-    if (plan.repo !== lastRepo) {
+    const groupLabel = paletteGroupLabel(plan, q)
+    if (groupLabel !== lastGroup) {
       const group = document.createElement('li')
       group.className = 'palette-group-label'
-      group.textContent = plan.repo
+      group.textContent = groupLabel
       paletteList.appendChild(group)
-      lastRepo = plan.repo
+      lastGroup = groupLabel
     }
     const status = plan.status || (plan.live ? 'needs_review' : 'reviewed')
     const statusLabel = statusLabelFor(status)
@@ -272,6 +303,15 @@ const PALETTE_FILTERS = [
   { id: 'approved', label: 'Approved' },
   { id: 'implemented', label: 'Implemented' },
   { id: 'all', label: 'All' },
+]
+
+const REVIEW_BUCKETS = [
+  { id: 'attention', label: 'Attention' },
+  { id: 'needs_review', label: 'Needs review' },
+  { id: 'changes_requested', label: 'Changes requested' },
+  { id: 'approved', label: 'Approved' },
+  { id: 'implemented', label: 'Implemented' },
+  { id: 'reviewed', label: 'Reviewed' },
 ]
 
 function renderPaletteFilters() {
@@ -305,6 +345,22 @@ function paletteEmptyStateHtml(query) {
 
 function planStatus(plan) {
   return plan.status || (plan.live ? 'needs_review' : 'reviewed')
+}
+
+function paletteGroupLabel(plan, query) {
+  if (query) return plan.repo || 'Plans'
+  const status = planStatus(plan)
+  if (status === 'needs_review' || status === 'changes_requested') return 'Needs attention'
+  if (status === 'in_progress' || status === 'implemented') return 'Implementation'
+  if (status === 'approved') return 'Approved'
+  return 'Recently reviewed'
+}
+
+function planMatchesReviewBucket(plan, bucketId = inboxFilter) {
+  const status = planStatus(plan)
+  if (bucketId === 'attention') return status === 'needs_review' || status === 'changes_requested'
+  if (bucketId === 'all') return true
+  return status === bucketId
 }
 
 function planMatchesPaletteFilter(plan) {
@@ -349,6 +405,60 @@ function planAttentionReason(plan) {
   bits.push(formatRelativeDate(plan.modified))
   return bits.join(' · ')
 }
+
+function renderInboxRail() {
+  if (!inboxRail || window.WEB_MODE) return
+
+  const counts = REVIEW_BUCKETS.reduce((acc, bucket) => {
+    acc[bucket.id] = allPlans.filter(plan => planMatchesReviewBucket(plan, bucket.id)).length
+    return acc
+  }, {})
+
+  inboxBuckets.innerHTML = REVIEW_BUCKETS.map(bucket => `
+    <button class="inbox-bucket${inboxFilter === bucket.id ? ' active' : ''}" data-bucket="${bucket.id}">
+      <span>${escapeHtml(bucket.label)}</span>
+      <strong>${counts[bucket.id] || 0}</strong>
+    </button>
+  `).join('')
+
+  const plans = allPlans
+    .filter(plan => planMatchesReviewBucket(plan, inboxFilter))
+    .sort(comparePlansForReview)
+    .slice(0, 18)
+
+  if (!plans.length) {
+    const label = REVIEW_BUCKETS.find(bucket => bucket.id === inboxFilter)?.label || 'plans'
+    inboxPlanList.innerHTML = `<div class="inbox-empty">No ${escapeHtml(label.toLowerCase())} plans.</div>`
+    return
+  }
+
+  inboxPlanList.innerHTML = plans.map(plan => {
+    const status = planStatus(plan)
+    return `<button class="inbox-plan-row${plan.filename === activePlan ? ' active' : ''}" data-filename="${escapeHtml(plan.filename)}">
+      <span class="inbox-status status-${escapeHtml(status)}" title="${escapeHtml(statusLabelFor(status))}"></span>
+      <span class="inbox-plan-main">
+        <span class="inbox-plan-title">${escapeHtml(plan.title)}</span>
+        <span class="inbox-plan-meta">${escapeHtml(plan.repo)} · ${escapeHtml(planAttentionReason(plan))}</span>
+      </span>
+    </button>`
+  }).join('')
+}
+
+inboxBuckets?.addEventListener('click', e => {
+  const bucket = e.target.closest?.('.inbox-bucket')
+  if (!bucket) return
+  inboxFilter = bucket.dataset.bucket || 'attention'
+  renderInboxRail()
+})
+
+inboxPlanList?.addEventListener('click', e => {
+  const row = e.target.closest?.('.inbox-plan-row')
+  if (!row) return
+  const plan = planByFilename(row.dataset.filename)
+  if (plan) openPlan(plan)
+})
+
+inboxRefreshBtn?.addEventListener('click', () => schedulePlansRefresh({}))
 
 function updatePaletteActive({ scroll = true } = {}) {
   const items = paletteList.querySelectorAll('.palette-item')
@@ -829,6 +939,7 @@ function renderTabs() {
     tabStrip.appendChild(tab)
   }
   persistPrefs()
+  renderInboxRail()
 }
 
 function statusLabelFor(status) {
@@ -874,6 +985,7 @@ function closeTab(filename) {
     }
   }
   renderTabs()
+  renderInboxRail()
 }
 
 function renderList() {
@@ -1040,6 +1152,7 @@ function renderReviewPanel() {
   const checklist = currentReview?.checklist || defaultReviewChecklist()
   if (!currentReview && !annotations.length) {
     reviewDetail.innerHTML = `
+      ${reviewCockpitHtml(annotations, checklist)}
       ${reviewChecklistHtml(checklist)}
       ${timelineHtml()}
       <div class="panel-empty"><strong>No review yet.</strong><br>Approve the live plan or add annotations and request changes to create a review record.</div>`
@@ -1050,12 +1163,9 @@ function renderReviewPanel() {
   const decision = currentReview?.decision || 'draft'
   const decidedAt = currentReview?.decidedAt ? formatDate(currentReview.decidedAt) : 'Not decided'
   reviewDetail.innerHTML = `
-    <div class="review-summary-card ${escapeHtml(decision)}">
-      <div class="review-summary-label">Review</div>
-      <div class="review-summary-title">${escapeHtml(decision === 'draft' ? 'Draft annotations' : reviewDecisionLabel(decision))}</div>
-      <div class="review-summary-meta">${escapeHtml(decidedAt)} · ${annotations.length} ${annotations.length === 1 ? 'annotation' : 'annotations'}</div>
-    </div>
+    ${reviewCockpitHtml(annotations, checklist, decision, decidedAt)}
     ${reviewChecklistHtml(checklist)}
+    ${reviewThreadsHtml(annotations)}
     ${timelineHtml()}
     <div class="review-annotation-list">
       ${annotations.length ? annotations.map(annotationCard).join('') : '<div class="panel-empty">No annotations were attached to this decision.</div>'}
@@ -1063,20 +1173,91 @@ function renderReviewPanel() {
   wireReviewChecklist()
 }
 
+function reviewCockpitHtml(annotations, checklist, decision = currentReview?.decision || 'draft', decidedAt = 'Not decided') {
+  const state = readinessState()
+  const progress = checklistProgress(checklist)
+  const blockers = blockingAnnotations(annotations)
+  const isFinal = decision && decision !== 'draft'
+  const title = isFinal ? reviewDecisionLabel(decision) : state.label
+  const tone = decision === 'changes_requested' ? 'warning' : decision === 'approved' ? 'success' : state.tone
+  const activeReasons = blockers.length
+    ? blockers.map(item => `${annotationTypeLabel(item.type)} annotation`)
+    : state.reasons
+  return `<div class="review-cockpit review-${escapeHtml(tone)}">
+    <div class="review-cockpit-top">
+      <div>
+        <div class="review-summary-label">Review cockpit</div>
+        <div class="review-summary-title">${escapeHtml(title)}</div>
+        <div class="review-summary-meta">${escapeHtml(decidedAt)} · ${annotations.length} ${annotations.length === 1 ? 'annotation' : 'annotations'} · ${timelineEvents.length} timeline ${timelineEvents.length === 1 ? 'event' : 'events'}</div>
+      </div>
+      <span class="review-cockpit-badge">${escapeHtml(progress.done)}/${escapeHtml(progress.total)}</span>
+    </div>
+    <div class="review-signal-grid">
+      <span><strong>${escapeHtml(blockers.length)}</strong> blockers</span>
+      <span><strong>${escapeHtml(state.unresolvedRefs || 0)}</strong> unresolved refs</span>
+      <span><strong>${escapeHtml(planReferences.filter(ref => ref.exists).length)}</strong> code refs</span>
+    </div>
+    ${activeReasons.length ? `<div class="review-blockers"><span>Blocked by</span>${activeReasons.slice(0, 4).map(reason => `<em>${escapeHtml(reason)}</em>`).join('')}</div>` : ''}
+  </div>`
+}
+
+function reviewThreadsHtml(annotations) {
+  const unresolved = blockingAnnotations(annotations)
+  if (!unresolved.length) return ''
+  return `<div class="review-thread-list">
+    <div class="review-checklist-title">Open review threads</div>
+    ${unresolved.map(annotation => {
+      const type = annotation.type || 'comment'
+      return `<div class="review-thread ${annotationClass(type)}">
+        <div class="review-thread-header">
+          <span>${escapeHtml(annotationTypeLabel(type))}</span>
+          <strong>Blocking</strong>
+        </div>
+        <blockquote>${escapeHtml(annotation.quote || '').substring(0, 180)}</blockquote>
+        <p>${escapeHtml(annotation.note || '')}</p>
+      </div>`
+    }).join('')}
+  </div>`
+}
+
 function timelineHtml() {
   const events = [...timelineEvents].reverse().slice(0, 8)
   if (!events.length) return '<div class="review-timeline"><div class="review-checklist-title">Timeline</div><div class="panel-empty">No timeline events yet.</div></div>'
+  let lastDay = null
   return `<div class="review-timeline">
     <div class="review-checklist-title">Timeline</div>
-    ${events.map(event => `<div class="timeline-event">
-      <span class="timeline-dot"></span>
+    ${events.map(event => {
+      const day = timelineDayLabel(event.at)
+      const dayHtml = day !== lastDay ? `<div class="timeline-day">${escapeHtml(day)}</div>` : ''
+      lastDay = day
+      const source = event.source || event.data?.source || 'desktop'
+      return `${dayHtml}<div class="timeline-event">
+      <span class="timeline-dot source-${timelineSourceClass(source)}"></span>
       <div>
         <div class="timeline-summary">${escapeHtml(event.summary || timelineEventLabel(event.type))}</div>
-        <div class="timeline-meta">${escapeHtml(timelineEventLabel(event.type))} · ${escapeHtml(formatRelativeDate(event.at))}</div>
+        <div class="timeline-meta">${escapeHtml(source)} · ${escapeHtml(timelineEventLabel(event.type))} · ${escapeHtml(formatRelativeDate(event.at))}</div>
       </div>
-    </div>`).join('')}
+    </div>`
+    }).join('')}
   </div>`
 }
+
+function timelineSourceClass(source) {
+  return String(source || 'desktop').toLowerCase().replace(/[^a-z0-9_-]/g, '-')
+}
+
+function timelineDayLabel(iso) {
+  if (!iso) return 'Earlier'
+  const date = new Date(iso)
+  const today = new Date()
+  const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const startDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const diffDays = Math.round((startToday - startDate) / 86400000)
+  if (diffDays === 0) return 'Today'
+  if (diffDays === 1) return 'Yesterday'
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 
 function timelineEventLabel(type) {
   return {
@@ -1538,6 +1719,7 @@ document.addEventListener('keydown', e => {
 
   // Escape — dismiss palette → exit step mode → dismiss comment UI
   if (e.key === 'Escape') {
+    if (shareModal && !shareModal.classList.contains('hidden')) { closeShareModal(); return }
     if (!palette.classList.contains('hidden')) { closePalette(); return }
     if (isStepMode) { exitStepMode(); return }
     dismissCommentUI()

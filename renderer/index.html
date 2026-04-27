@@ -34,6 +34,20 @@
   </div>
 
   <div id="workspace-shell">
+  <aside id="inbox-rail">
+    <div class="inbox-rail-header">
+      <div>
+        <div class="inbox-eyebrow">Review inbox</div>
+        <h2>Plans</h2>
+      </div>
+      <button id="inbox-refresh-btn" title="Refresh plans">↻</button>
+    </div>
+    <div id="inbox-buckets"></div>
+    <div class="inbox-rail-section">
+      <div class="inbox-section-label">Queue</div>
+      <div id="inbox-plan-list"></div>
+    </div>
+  </aside>
   <div id="main-area">
 
     <div id="empty-state">
@@ -188,6 +202,37 @@
     <input id="palette-input" placeholder="Search plans…" autocomplete="off" spellcheck="false" />
     <div id="palette-filters" aria-label="Review filters"></div>
     <ul id="palette-list"></ul>
+    <div id="palette-footer">
+      <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
+      <span><kbd>↵</kbd> Open</span>
+      <span><kbd>Esc</kbd> Close</span>
+    </div>
+  </div>
+</div>
+
+<div id="share-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
+  <div id="share-modal-backdrop"></div>
+  <div id="share-modal-card">
+    <div class="share-modal-header">
+      <div>
+        <div class="share-modal-eyebrow">Local sharing</div>
+        <h2 id="share-modal-title">Share review link</h2>
+      </div>
+      <button id="share-modal-close" title="Close">×</button>
+    </div>
+    <p class="share-modal-copy">Anyone on this network with the link can view plans and add comments. Review decisions stay in this desktop app.</p>
+    <div class="share-permission-row">
+      <span>Anyone with the local link</span>
+      <strong>Can view and comment</strong>
+    </div>
+    <div class="share-link-row">
+      <code id="share-modal-url"></code>
+      <button id="share-modal-copy">Copy</button>
+    </div>
+    <div class="share-warning">Unauthenticated local-network sharing. Use only on networks you trust.</div>
+    <div class="share-modal-footer">
+      <button id="share-modal-done" class="btn-ghost">Done</button>
+    </div>
   </div>
 </div>
 
