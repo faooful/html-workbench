@@ -237,7 +237,7 @@ function renderPaletteList() {
   if (paletteIndex >= paletteResults.length) paletteIndex = Math.max(0, paletteResults.length - 1)
 
   if (!paletteResults.length) {
-    paletteList.innerHTML = '<li class="palette-empty">No plans found</li>'
+    paletteList.innerHTML = paletteEmptyStateHtml(q)
     return
   }
 
@@ -279,6 +279,28 @@ function renderPaletteFilters() {
   paletteFilters.innerHTML = PALETTE_FILTERS.map(filter =>
     `<button class="palette-filter${paletteFilter === filter.id ? ' active' : ''}" data-filter="${filter.id}">${filter.label}</button>`
   ).join('')
+}
+
+function paletteEmptyStateHtml(query) {
+  const label = PALETTE_FILTERS.find(filter => filter.id === paletteFilter)?.label || 'plans'
+  const copy = query
+    ? {
+      title: 'No matching plans',
+      body: `No ${label.toLowerCase()} plans match "${query}".`,
+    }
+    : {
+      attention: { title: 'Nothing needs attention', body: 'No live plans or change requests are waiting right now.' },
+      needs_review: { title: 'No plans need review', body: 'New live plans will appear here when Claude or Codex creates them.' },
+      changes_requested: { title: 'No change requests', body: 'Plans you send back for revision will collect here.' },
+      approved: { title: 'No approved plans', body: 'Approved plans will appear here after you complete a review.' },
+      implemented: { title: 'No implemented plans', body: 'Plans with matching completed task evidence will appear here.' },
+      all: { title: 'No plans yet', body: 'Generate a plan in Claude Code or Codex to start building your local review memory.' },
+    }[paletteFilter] || { title: 'No plans found', body: 'Try a different filter or search term.' }
+
+  return `<li class="palette-empty">
+    <strong>${escapeHtml(copy.title)}</strong>
+    <span>${escapeHtml(copy.body)}</span>
+  </li>`
 }
 
 function planStatus(plan) {
@@ -924,10 +946,12 @@ async function openPlan(plan, opts = {}) {
   applyCommentHighlights()
 
   const isLive = plan.live
+  const canReviewDecision = isLive && !window.WEB_MODE
   liveBadge.classList.toggle('hidden', !isLive)
   liveBar.classList.toggle('hidden', !isLive)
-  approveBtn?.classList.toggle('hidden', !isLive)
-  sendBtn.classList.toggle('hidden', !isLive)
+  liveDismissBtn?.classList.toggle('hidden', !canReviewDecision)
+  approveBtn?.classList.toggle('hidden', !canReviewDecision)
+  sendBtn.classList.toggle('hidden', !canReviewDecision)
   renderReviewBanner()
   renderReadinessStrip()
   panelToggleBtn.classList.remove('hidden')
