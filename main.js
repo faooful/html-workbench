@@ -278,6 +278,7 @@ function getSnapshotTimestamps(filename) {
 function syncPlans() {
   syncClaudePlans()
   syncCodexPlans()
+  ensurePlanTimelines()
 }
 
 function syncClaudePlans() {
@@ -311,6 +312,36 @@ function syncClaudePlans() {
   }
   saveSourceMeta(sources)
   return synced
+}
+
+function ensurePlanTimelines() {
+  if (!fs.existsSync(VIEWER_PLANS_DIR)) return
+  const sources = loadSourceMeta()
+  for (const filename of fs.readdirSync(VIEWER_PLANS_DIR)) {
+    if (!filename.endsWith('.md')) continue
+    if (loadPlanTimeline(filename).length) continue
+
+    const filepath = path.join(VIEWER_PLANS_DIR, filename)
+    let stat
+    try { stat = fs.statSync(filepath) } catch (_) { continue }
+    const source = sources[filename]
+    const sourceName = source?.source || 'archive'
+    appendPlanTimelineEvent(filename, {
+      type: 'created',
+      at: source?.createdAt || stat.birthtime?.toISOString?.() || stat.mtime.toISOString(),
+      summary: sourceName === 'archive' ? 'Plan added to local archive' : `${capitalize(sourceName)} plan imported`,
+      data: {
+        source: sourceName,
+        sourcePath: source?.sourcePath || null,
+        backfilled: true,
+      },
+    })
+  }
+}
+
+function capitalize(value) {
+  const text = String(value || '')
+  return text ? text[0].toUpperCase() + text.slice(1) : text
 }
 
 function syncCodexPlans(sessionPath = null) {

@@ -1092,13 +1092,15 @@ function getReviewChecklist() {
 
 function reviewChecklistHtml(checklist) {
   const normalized = { ...defaultReviewChecklist(), ...(checklist || {}) }
+  const disabled = window.WEB_MODE ? 'disabled' : ''
   return `<div class="review-checklist">
     <div class="review-checklist-title">Checklist</div>
     ${REVIEW_CHECKLIST_ITEMS.map(([key, label]) => `
       <label class="review-check-item">
-        <input type="checkbox" data-review-check="${key}" ${normalized[key] ? 'checked' : ''}>
+        <input type="checkbox" data-review-check="${key}" ${normalized[key] ? 'checked' : ''} ${disabled}>
         <span>${label}</span>
       </label>`).join('')}
+    ${window.WEB_MODE ? '<div class="review-readonly-note">Review decisions are saved in the desktop app.</div>' : ''}
   </div>`
 }
 

@@ -1986,6 +1986,17 @@ body {
   cursor: pointer;
 }
 
+.review-check-item input:disabled + span {
+  color: var(--text-muted);
+}
+
+.review-readonly-note {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .review-check-item input {
   width: 14px;
   height: 14px;
