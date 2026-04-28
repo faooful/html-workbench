@@ -9,10 +9,15 @@ node_modules/
 plans/*.md
 plans/*.comments.json
 plans/*.review.json
+plans/*.timeline.json
 plans/.sources.json
 plans/.snapshots/
+design-docs/
 
 # Electron/package artifacts
 dist/
 out/
 *.log
+.ui-artifacts/
+test-results/
+playwright-report/

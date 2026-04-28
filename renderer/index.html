@@ -4,184 +4,113 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; worker-src blob: 'self'" />
-  <title>Plan Viewer</title>
+  <title>Design.md Editor</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-<div id="app">
+  <div id="app" data-theme="dark" data-pane-mode="split">
+    <aside id="vault-rail">
+      <div id="traffic-spacer"></div>
+      <header class="vault-header">
+        <div>
+          <p class="eyebrow">Local vault</p>
+          <h1>design.md</h1>
+        </div>
+        <button id="new-doc-btn" class="icon-btn" title="New design.md" aria-label="New design.md">+</button>
+      </header>
 
-  <div id="chrome-bar">
-    <div id="chrome-window-spacer"></div>
-    <div id="tab-cluster">
-      <div id="tab-strip"></div>
-      <button id="tab-new-btn" title="Open plan">
-        <span class="tab-new-icon">+</span>
-        <kbd>⌘K</kbd>
-      </button>
-    </div>
-    <div id="chrome-actions">
-      <div id="share-widget" class="hidden">
-        <button id="share-copy-btn" class="chrome-action-btn">
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
-            <path d="M4.8 7.7L8.2 4.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-            <path d="M5.3 3.5l.6-.6a2.3 2.3 0 013.2 3.2l-.6.6M7.7 9.5l-.6.6a2.3 2.3 0 01-3.2-3.2l.6-.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-          </svg>
-          Share
-        </button>
-      </div>
-      <button id="panel-toggle-btn" class="chrome-icon-btn hidden" title="Inspector">◫</button>
-    </div>
-  </div>
+      <section class="vault-actions">
+        <button id="import-placeholder-btn" class="primary-wide">New file</button>
+        <button id="rename-doc-btn">Rename</button>
+        <button id="delete-doc-btn">Delete</button>
+      </section>
 
-  <div id="workspace-shell">
-  <div id="main-area">
+      <section class="vault-section">
+        <div class="section-label">Files</div>
+        <div id="doc-list"></div>
+      </section>
 
-    <div id="empty-state">
-      <p>Select a plan to read it</p>
-    </div>
+      <section class="vault-section recents">
+        <div class="section-label">Recent</div>
+        <div id="recent-list"></div>
+      </section>
+    </aside>
 
-    <div id="plan-header" class="hidden">
-      <div id="plan-title-group">
-        <h1 id="doc-title"></h1>
-        <span id="doc-date"></span>
-      </div>
-      <div id="plan-actions">
-        <span id="live-badge" class="hidden"><span class="live-dot"></span>Live</span>
-        <div class="copy-wrap">
-          <button id="copy-btn" class="btn-ghost">Copy</button>
-          <div id="copy-menu" class="copy-menu hidden">
-            <button id="copy-markdown-btn">Copy as Markdown</button>
-            <button id="copy-text-btn">Copy as Plain Text</button>
-            <button id="copy-with-comments-btn">Copy with Comments</button>
+    <main id="workspace">
+      <header id="topbar">
+        <div class="doc-title-wrap">
+          <button id="sidebar-toggle" class="icon-btn" aria-label="Toggle vault">☰</button>
+          <div>
+            <p class="eyebrow">Design document</p>
+            <h2 id="active-title">Untitled</h2>
           </div>
         </div>
-        <div id="view-switcher" class="hidden">
-          <div class="switcher-indicator"></div>
-          <button id="switcher-full" class="switcher-btn active">
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="1.5" y="1.5" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/>
-              <line x1="3.5" y1="4.5" x2="9.5" y2="4.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
-              <line x1="3.5" y1="6.5" x2="9.5" y2="6.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
-              <line x1="3.5" y1="8.5" x2="7" y2="8.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
-            </svg>
-            Full plan
-          </button>
-          <button id="switcher-step" class="switcher-btn">
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="3" cy="3" r="1.2" fill="currentColor"/>
-              <circle cx="3" cy="6.5" r="1.2" fill="currentColor"/>
-              <circle cx="3" cy="10" r="1.2" fill="currentColor"/>
-              <line x1="5.5" y1="3" x2="10.5" y2="3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-              <line x1="5.5" y1="6.5" x2="10.5" y2="6.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-              <line x1="5.5" y1="10" x2="8.5" y2="10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-            </svg>
-            Step through
-          </button>
+        <div id="topbar-actions">
+          <button id="command-btn" class="toolbar-btn">Search <kbd>⌘K</kbd></button>
+          <button id="theme-btn" class="toolbar-btn">Light</button>
+          <button id="save-btn" class="toolbar-btn">Save</button>
+          <button id="copy-btn" class="toolbar-btn accent">Copy design.md</button>
         </div>
-        <button id="diff-btn" class="btn-ghost hidden">Diff</button>
-        <button id="approve-btn" class="btn-approve hidden">Approve</button>
-        <button id="send-btn" class="btn-send hidden">Request changes</button>
-      </div>
-    </div>
+      </header>
 
-    <div id="version-banner" class="hidden"></div>
-    <div id="review-banner" class="hidden"></div>
-
-    <div id="live-bar" class="hidden">
-      <span class="live-bar-text">This plan is awaiting your approval — select text and press <kbd>⌘↵</kbd> to add a comment, then send to Claude.</span>
-      <button id="live-dismiss-btn">Dismiss</button>
-    </div>
-
-    <div id="content-shell">
-      <div id="content-main">
-        <div id="viewer" class="hidden">
-          <div id="viewer-body">
-            <article id="doc-content" class="markdown-body"></article>
-            <nav id="toc-panel" class="hidden">
-              <div class="toc-label">Contents</div>
-              <ul id="toc-list"></ul>
-            </nav>
-            <div id="diff-panel" class="hidden"></div>
-          </div>
+      <div id="pane-toolbar">
+        <div class="pane-title editor-title">
+          <span>Markdown editor</span>
+          <button id="editor-full-btn" class="icon-btn" aria-label="Editor fullscreen">↗</button>
         </div>
-
-        <div id="step-panel" class="hidden">
-          <div id="step-nav"></div>
-          <div id="step-body">
-            <article id="step-content" class="markdown-body"></article>
+        <div class="pane-title preview-title">
+          <span>Live preview</span>
+          <div class="preview-tabs" role="tablist" aria-label="Preview tabs">
+            <button class="preview-tab active" data-tab="document">Document</button>
+            <button class="preview-tab" data-tab="tokens">Tokens</button>
+            <button class="preview-tab" data-tab="components">Components</button>
           </div>
-          <div id="step-footer">
-            <button id="step-prev-btn" class="btn-ghost" disabled>← Previous</button>
-            <span id="step-meta"></span>
-            <button id="step-next-btn" class="btn-send">Next →</button>
-          </div>
+          <button id="preview-full-btn" class="icon-btn" aria-label="Preview fullscreen">↗</button>
         </div>
       </div>
 
+      <div id="splitter">
+        <section id="editor-pane" class="pane">
+          <div id="editor-shell">
+            <pre id="line-numbers" aria-hidden="true">1</pre>
+            <textarea id="markdown-editor" spellcheck="false" autocomplete="off" aria-label="Markdown editor"></textarea>
+          </div>
+        </section>
+
+        <section id="preview-pane" class="pane">
+          <div id="preview-scroll">
+            <article id="document-preview" class="preview-view markdown-body"></article>
+            <article id="tokens-preview" class="preview-view hidden"></article>
+            <article id="components-preview" class="preview-view hidden"></article>
+          </div>
+        </section>
       </div>
 
+      <footer id="statusbar">
+        <span id="save-state">Saved</span>
+        <span id="stats">Characters: 0 · Words: 0 · Lines: 1</span>
+        <label><input id="sync-scroll" type="checkbox" checked> Sync scroll</label>
+      </footer>
+    </main>
   </div>
-  <aside id="context-panel" class="hidden">
-    <div id="context-tabs">
-      <button id="context-code-tab" class="context-tab active">Code</button>
-      <button id="context-changes-tab" class="context-tab">Changes</button>
-      <button id="context-review-tab" class="context-tab">Review</button>
-      <button id="context-close-btn" title="Close inspector">×</button>
+
+  <div id="palette" class="hidden">
+    <div id="palette-backdrop"></div>
+    <div id="palette-card">
+      <input id="palette-input" placeholder="Open file or run action…" autocomplete="off" spellcheck="false" />
+      <ul id="palette-list"></ul>
+      <div id="palette-footer">
+        <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
+        <span><kbd>↵</kbd> Run</span>
+        <span><kbd>Esc</kbd> Close</span>
+      </div>
     </div>
-    <div id="code-context" class="context-view">
-      <div id="file-chip-row"></div>
-      <div id="file-preview"></div>
-    </div>
-    <div id="changes-context" class="context-view hidden">
-      <div id="changes-toolbar"></div>
-      <div id="semantic-diff-list"></div>
-    </div>
-    <div id="review-context" class="context-view hidden">
-      <div id="review-detail"></div>
-    </div>
-  </aside>
   </div>
-</div>
 
-<!-- Floating add-comment button -->
-<button id="comment-add-btn" class="hidden">+ Comment</button>
+  <div id="toast"></div>
 
-<!-- Comment input bubble -->
-<div id="comment-bubble" class="hidden">
-  <select id="annotation-type" aria-label="Annotation type">
-    <option value="comment">Comment</option>
-    <option value="question">Question</option>
-    <option value="risk">Risk</option>
-    <option value="replace">Replace</option>
-    <option value="delete">Delete</option>
-    <option value="insert">Insert</option>
-  </select>
-  <textarea id="comment-input" placeholder="Add a note for Claude..." rows="3" spellcheck="false"></textarea>
-  <div class="comment-bubble-footer">
-    <button id="comment-cancel-btn" class="btn-ghost">Cancel</button>
-    <button id="comment-save-btn" class="btn-approve">Save</button>
-  </div>
-</div>
-
-<!-- Comment hover tooltip -->
-<div id="comment-tooltip" class="hidden">
-  <div id="tooltip-note"></div>
-  <button id="tooltip-delete">Delete</button>
-</div>
-
-<div id="toast"></div>
-
-<!-- ⌘K command palette -->
-<div id="palette" class="hidden">
-  <div id="palette-backdrop"></div>
-  <div id="palette-card">
-    <input id="palette-input" placeholder="Search plans…" autocomplete="off" spellcheck="false" />
-    <div id="palette-filters" aria-label="Review filters"></div>
-    <ul id="palette-list"></ul>
-  </div>
-</div>
-
-<script src="marked.min.js"></script>
-<script src="renderer.js"></script>
+  <script src="marked.min.js"></script>
+  <script src="test-api.js"></script>
+  <script src="renderer.js"></script>
 </body>
 </html>

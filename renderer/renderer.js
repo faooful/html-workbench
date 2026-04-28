@@ -1,1709 +1,628 @@
-// ── State ─────────────────────────────────────────────────────────────────────
+// Split-pane design.md editor
 
-let allPlans        = []
-let activePlan      = null
-let activeContent   = ''
-let activeTrigger   = null
-let triggerExpanded = false
-let snapshots       = []   // array of epoch-ms timestamps, oldest first
-let activeSnapshot  = null // null = current; number = viewing that snapshot
-let comments        = []
-let currentReview   = null
-let pendingQuote    = ''
-let paletteIndex    = 0
-let paletteResults  = []
-let paletteSearchPlans = []
-let paletteOpenPlans = []
-let paletteFilter = 'attention'
-let paletteRenderFrame = null
-let plansRefreshTimer = null
-let pendingPlanUpdate = null
-let refreshInFlight = false
-let isDiffMode      = false
-let stepSections    = []
-let stepIndex       = 0
-let isStepMode      = false
-let openTabs        = []
-let panelOpen       = false
-let activePanel     = 'code'
-let planReferences  = []
-let activeRefPath   = null
-let semanticMode    = 'semantic'
+let docs = []
+let activeFilename = null
+let activeContent = ''
+let dirty = false
+let saveTimer = null
+let paletteIndex = 0
+let paletteItems = []
+let recentFiles = []
+let paneMode = 'split'
+let activePreviewTab = 'document'
+let theme = 'dark'
+let syncingScroll = false
 
-// Per-group expanded counts: repoKey → number shown (multiples of PAGE_SIZE)
-const PAGE_SIZE   = 5
-const groupCounts = {}
-
-// Collapsed groups: repoKey → bool
-const collapsedGroups = {}
-
-// ── DOM refs ──────────────────────────────────────────────────────────────────
-
-const tabStrip            = document.getElementById('tab-strip')
-const tabNewBtn           = document.getElementById('tab-new-btn')
-const emptyState          = document.getElementById('empty-state')
-const workspaceShell      = document.getElementById('workspace-shell')
-const planHeader          = document.getElementById('plan-header')
-const docTitle            = document.getElementById('doc-title')
-const docDate             = document.getElementById('doc-date')
-const liveBadge           = document.getElementById('live-badge')
-const copyBtn             = document.getElementById('copy-btn')
-const copyMenu            = document.getElementById('copy-menu')
-const copyMarkdownBtn     = document.getElementById('copy-markdown-btn')
-const copyTextBtn         = document.getElementById('copy-text-btn')
-const copyWithCommentsBtn = document.getElementById('copy-with-comments-btn')
-const approveBtn          = document.getElementById('approve-btn')
-const sendBtn             = document.getElementById('send-btn')
-const versionBanner       = document.getElementById('version-banner')
-const reviewBanner        = document.getElementById('review-banner')
-const liveBar             = document.getElementById('live-bar')
-const liveDismissBtn      = document.getElementById('live-dismiss-btn')
-const viewer              = document.getElementById('viewer')
-const viewerBody          = document.getElementById('viewer-body')
-const docContent          = document.getElementById('doc-content')
-const commentAddBtn       = document.getElementById('comment-add-btn')
-const commentBubble       = document.getElementById('comment-bubble')
-const commentInput        = document.getElementById('comment-input')
-const commentCancelBtn    = document.getElementById('comment-cancel-btn')
-const commentSaveBtn      = document.getElementById('comment-save-btn')
-const commentTooltip      = document.getElementById('comment-tooltip')
-const tooltipNote         = document.getElementById('tooltip-note')
-const tooltipDelete       = document.getElementById('tooltip-delete')
-const annotationType      = document.getElementById('annotation-type')
-const toastEl             = document.getElementById('toast')
-const tocPanel            = document.getElementById('toc-panel')
-const tocList             = document.getElementById('toc-list')
-const palette             = document.getElementById('palette')
-const paletteInput        = document.getElementById('palette-input')
-const paletteFilters      = document.getElementById('palette-filters')
-const paletteList         = document.getElementById('palette-list')
-const paletteBackdrop     = document.getElementById('palette-backdrop')
-const diffBtn             = document.getElementById('diff-btn')
-const diffPanel           = document.getElementById('diff-panel')
-const panelToggleBtn      = document.getElementById('panel-toggle-btn')
-const contextPanel        = document.getElementById('context-panel')
-const contextCodeTab      = document.getElementById('context-code-tab')
-const contextChangesTab   = document.getElementById('context-changes-tab')
-const contextReviewTab    = document.getElementById('context-review-tab')
-const contextCloseBtn     = document.getElementById('context-close-btn')
-const codeContext         = document.getElementById('code-context')
-const changesContext      = document.getElementById('changes-context')
-const reviewContext       = document.getElementById('review-context')
-const fileChipRow         = document.getElementById('file-chip-row')
-const filePreview         = document.getElementById('file-preview')
-const changesToolbar      = document.getElementById('changes-toolbar')
-const semanticDiffList    = document.getElementById('semantic-diff-list')
-const reviewDetail        = document.getElementById('review-detail')
-const viewSwitcher        = document.getElementById('view-switcher')
-const switcherFull        = document.getElementById('switcher-full')
-const switcherStep        = document.getElementById('switcher-step')
-const stepPanel           = document.getElementById('step-panel')
-const stepNav             = document.getElementById('step-nav')
-const stepBody            = document.getElementById('step-body')
-const stepContent         = document.getElementById('step-content')
-const stepMeta            = document.getElementById('step-meta')
-const stepPrevBtn         = document.getElementById('step-prev-btn')
-const stepNextBtn         = document.getElementById('step-next-btn')
+const app = document.getElementById('app')
+const docList = document.getElementById('doc-list')
+const recentList = document.getElementById('recent-list')
+const newDocBtn = document.getElementById('new-doc-btn')
+const importPlaceholderBtn = document.getElementById('import-placeholder-btn')
+const renameDocBtn = document.getElementById('rename-doc-btn')
+const deleteDocBtn = document.getElementById('delete-doc-btn')
+const sidebarToggle = document.getElementById('sidebar-toggle')
+const activeTitle = document.getElementById('active-title')
+const commandBtn = document.getElementById('command-btn')
+const themeBtn = document.getElementById('theme-btn')
+const saveBtn = document.getElementById('save-btn')
+const copyBtn = document.getElementById('copy-btn')
+const editorFullBtn = document.getElementById('editor-full-btn')
+const previewFullBtn = document.getElementById('preview-full-btn')
+const editor = document.getElementById('markdown-editor')
+const lineNumbers = document.getElementById('line-numbers')
+const documentPreview = document.getElementById('document-preview')
+const tokensPreview = document.getElementById('tokens-preview')
+const componentsPreview = document.getElementById('components-preview')
+const previewScroll = document.getElementById('preview-scroll')
+const previewTabs = [...document.querySelectorAll('.preview-tab')]
+const saveState = document.getElementById('save-state')
+const stats = document.getElementById('stats')
+const syncScrollToggle = document.getElementById('sync-scroll')
+const palette = document.getElementById('palette')
+const paletteInput = document.getElementById('palette-input')
+const paletteList = document.getElementById('palette-list')
+const paletteBackdrop = document.getElementById('palette-backdrop')
+const toast = document.getElementById('toast')
 
 marked.setOptions({ gfm: true, breaks: false })
 
-// ── Web mode init ─────────────────────────────────────────────────────────────
+function escapeHtml(value) {
+  return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
 
-if (window.WEB_MODE) {
-  // Hide Electron-only controls
-  document.getElementById('approve-btn')?.classList.add('hidden')
-  document.getElementById('send-btn')?.classList.add('hidden')
-  document.getElementById('live-dismiss-btn')?.classList.add('hidden')
-} else {
-  // Show sharing URL in sidebar footer
-  window.planAPI.getSharingInfo?.().then(info => {
-    if (!info?.url) return
-    document.getElementById('share-widget').classList.remove('hidden')
+function slug(input) {
+  return String(input || 'design')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64) || 'design'
+}
+
+function titleFromMarkdown(content, fallback = 'design.md') {
+  const match = String(content || '').match(/^#\s+(.+)$/m)
+  if (match) return match[1].trim()
+  return fallback.split('/').pop().replace(/\.md$/, '').split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
+}
+
+function projectFromFilename(filename) {
+  return String(filename || '').split('/')[0] || 'local'
+}
+
+function getPrefs() {
+  try { return JSON.parse(localStorage.getItem('designEditorPrefs') || '{}') } catch (_) { return {} }
+}
+
+function setPrefs(next) {
+  localStorage.setItem('designEditorPrefs', JSON.stringify({ ...getPrefs(), ...next }))
+}
+
+function setToast(message) {
+  toast.textContent = message
+  toast.classList.add('visible')
+  clearTimeout(setToast.timer)
+  setToast.timer = setTimeout(() => toast.classList.remove('visible'), 1800)
+}
+
+function setSaveState(label, mode = '') {
+  saveState.textContent = label
+  saveState.dataset.mode = mode
+}
+
+function normalizeDoc(doc) {
+  return {
+    filename: doc.filename,
+    title: doc.title || titleFromMarkdown('', doc.filename),
+    project: doc.project || doc.repo || projectFromFilename(doc.filename),
+    modified: doc.modified || new Date().toISOString(),
+    summary: doc.summary || '',
+  }
+}
+
+async function loadDocs() {
+  docs = (await window.planAPI.getDesignDocs()).map(normalizeDoc)
+  renderDocLists()
+  const prefs = getPrefs()
+  const target = docs.find(doc => doc.filename === prefs.lastDesignDoc)?.filename || docs[0]?.filename
+  if (target) await openDoc(target)
+}
+
+async function openDoc(filename) {
+  if (dirty) await saveNow()
+  const content = await window.planAPI.getDesignDocContent(filename)
+  if (content == null) return
+  activeFilename = filename
+  activeContent = content
+  dirty = false
+  editor.value = content
+  activeTitle.textContent = titleFromMarkdown(content, filename)
+  setPrefs({ lastDesignDoc: filename })
+  rememberFile(filename)
+  renderDocLists()
+  updateAll()
+  setSaveState('Saved')
+}
+
+function rememberFile(filename) {
+  recentFiles = [filename, ...recentFiles.filter(item => item !== filename)].slice(0, 5)
+}
+
+function renderDocLists() {
+  const grouped = new Map()
+  docs.forEach(doc => {
+    const group = doc.project || projectFromFilename(doc.filename)
+    if (!grouped.has(group)) grouped.set(group, [])
+    grouped.get(group).push(doc)
   })
-  document.getElementById('share-copy-btn')?.addEventListener('click', () => {
-    window.planAPI.getSharingInfo?.().then(info => {
-      if (info?.url) navigator.clipboard.writeText(info.url).catch(() => {})
-      showToast('Link copied')
-    })
+
+  docList.innerHTML = [...grouped.entries()].map(([project, projectDocs]) => `
+    <div class="doc-group">
+      <button class="doc-group-title" data-project="${escapeHtml(project)}">▾ ${escapeHtml(project)}</button>
+      ${projectDocs.map(docRow).join('')}
+    </div>
+  `).join('') || '<div class="empty-list">No design docs yet.</div>'
+
+  recentList.innerHTML = recentFiles
+    .map(filename => docs.find(doc => doc.filename === filename))
+    .filter(Boolean)
+    .map(doc => `<button class="recent-row" data-filename="${escapeHtml(doc.filename)}">${escapeHtml(doc.title)}</button>`)
+    .join('') || '<div class="empty-list">No recent files.</div>'
+}
+
+function docRow(doc) {
+  const active = doc.filename === activeFilename ? ' active' : ''
+  return `<button class="doc-row${active}" data-filename="${escapeHtml(doc.filename)}">
+    <span class="doc-icon">#</span>
+    <span>
+      <strong>${escapeHtml(doc.title)}</strong>
+      <em>${escapeHtml(doc.filename)}</em>
+    </span>
+  </button>`
+}
+
+function updateAll() {
+  updateLineNumbers()
+  updateStats()
+  renderPreview()
+}
+
+function updateLineNumbers() {
+  const count = Math.max(1, editor.value.split('\n').length)
+  lineNumbers.textContent = Array.from({ length: count }, (_, i) => i + 1).join('\n')
+}
+
+function updateStats() {
+  const text = editor.value
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0
+  const lines = Math.max(1, text.split('\n').length)
+  stats.textContent = `Characters: ${text.length.toLocaleString()} · Words: ${words.toLocaleString()} · Lines: ${lines.toLocaleString()}`
+}
+
+function scheduleSave() {
+  dirty = true
+  setSaveState('Unsaved', 'dirty')
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => saveNow(), 700)
+}
+
+async function saveNow() {
+  if (!activeFilename) return
+  clearTimeout(saveTimer)
+  const nextContent = editor.value
+  setSaveState('Saving...', 'saving')
+  const saved = await window.planAPI.saveDesignDoc(activeFilename, nextContent)
+  if (!saved) {
+    setSaveState('Save failed', 'error')
+    return
+  }
+  activeContent = nextContent
+  dirty = false
+  setSaveState('Saved')
+  docs = (await window.planAPI.getDesignDocs()).map(normalizeDoc)
+  renderDocLists()
+}
+
+function sectionContent(content, headingName) {
+  const lines = String(content || '').split('\n')
+  const start = lines.findIndex(line => new RegExp(`^##\\s+${headingName}\\b`, 'i').test(line.trim()))
+  if (start < 0) return ''
+  const out = []
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^##\s+/.test(lines[i])) break
+    out.push(lines[i])
+  }
+  return out.join('\n').trim()
+}
+
+function parseTokens(content) {
+  const tokens = []
+  const tokenText = sectionContent(content, 'Tokens')
+  for (const line of tokenText.split('\n')) {
+    const match = line.match(/^\s*[-*]?\s*([^:]+):\s*(.+)$/)
+    if (!match) continue
+    const name = match[1].replace(/[`*_]/g, '').trim()
+    const value = match[2].replace(/[`*_]/g, '').trim()
+    let type = 'text'
+    if (/(#[0-9a-f]{3,8}\b|rgba?\(|hsla?\()/i.test(value)) type = 'color'
+    else if (/\b\d+(\.\d+)?(px|rem|em|%)\b/i.test(value)) type = 'size'
+    else if (/font|type|weight|leading|tracking/i.test(name)) type = 'type'
+    tokens.push({ name, value, type })
+  }
+  return tokens
+}
+
+function parseComponents(content) {
+  const componentText = sectionContent(content, '(Components|Components And Patterns|Patterns)')
+  if (!componentText) return []
+  const chunks = componentText.split(/(?=^###\s+)/m).filter(Boolean)
+  return chunks.map(chunk => {
+    const title = chunk.match(/^###\s+(.+)$/m)?.[1]?.trim() || 'Component'
+    const variants = chunk.match(/Variants?:\s*(.+)$/im)?.[1]?.split(/,\s*/).filter(Boolean) || ['Primary', 'Secondary', 'Ghost']
+    const sizes = chunk.match(/Sizes?:\s*(.+)$/im)?.[1]?.split(/,\s*/).filter(Boolean) || ['Small', 'Medium', 'Large']
+    const states = chunk.match(/States?:\s*(.+)$/im)?.[1]?.split(/,\s*/).filter(Boolean) || ['Default', 'Hover', 'Disabled']
+    return { title, variants, sizes, states, body: chunk.replace(/^###\s+.+$/m, '').trim() }
   })
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function formatDate(iso) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-function formatRelativeDate(iso) {
-  const d = new Date(iso), now = new Date()
-  const diff = now - d
-  const mins  = Math.floor(diff / 60000)
-  if (mins  < 60)  return `${mins}m`
-  const hrs  = Math.floor(diff / 3600000)
-  if (hrs   < 24)  return `${hrs}h`
-  const days = Math.floor(diff / 86400000)
-  if (days === 1)  return 'Yesterday'
-  if (days  <  7)  return `${days}d`
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
-function escapeHtml(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-}
-function uid() { return Math.random().toString(36).slice(2,10) }
-
-function planByFilename(filename) {
-  return allPlans.find(p => p.filename === filename)
+function renderPreview() {
+  const content = editor.value
+  documentPreview.innerHTML = marked.parse(content)
+  renderTokens(parseTokens(content))
+  renderComponents(parseComponents(content), parseTokens(content))
 }
 
-function indexPalettePlans() {
-  paletteSearchPlans = allPlans.map(plan => ({
-    plan,
-    searchText: [
-      plan.title,
-      plan.repo,
-      plan.summary,
-      plan.trigger,
-      statusLabelFor(plan.status || (plan.live ? 'needs_review' : 'reviewed')),
-    ].filter(Boolean).join(' ').toLowerCase(),
-  }))
+function renderTokens(tokens) {
+  if (!tokens.length) {
+    tokensPreview.innerHTML = '<div class="preview-empty">Add a <code>## Tokens</code> section with bullets like <code>- Accent: #5E6DD6</code>.</div>'
+    return
+  }
+  tokensPreview.innerHTML = `<div class="preview-section-title">Detected tokens</div>
+    <div class="token-grid">${tokens.map(token => `
+      <div class="token-card">
+        <span class="token-swatch ${token.type}" style="${token.type === 'color' ? `background:${escapeHtml(token.value)}` : ''}"></span>
+        <div>
+          <strong>${escapeHtml(token.name)}</strong>
+          <code>${escapeHtml(token.value)}</code>
+        </div>
+      </div>`).join('')}</div>`
 }
 
-function persistPrefs() {
-  window.planAPI.setPrefs?.({ lastPlan: activePlan, openTabs }).catch(() => {})
+function renderComponents(components, tokens) {
+  if (!components.length) {
+    componentsPreview.innerHTML = '<div class="preview-empty">Add <code>## Components</code> and <code>### Button</code> sections to generate component previews.</div>'
+    return
+  }
+  const accent = tokens.find(token => /accent|primary/i.test(token.name) && token.type === 'color')?.value || '#5E6DD6'
+  componentsPreview.innerHTML = components.map(component => renderComponent(component, accent)).join('')
 }
 
-let toastTimer = null
-function showToast(msg, duration = 2800) {
-  toastEl.textContent = msg
-  toastEl.classList.add('visible')
-  clearTimeout(toastTimer)
-  toastTimer = setTimeout(() => toastEl.classList.remove('visible'), duration)
+function renderComponent(component, accent) {
+  const kind = slug(component.title)
+  if (/button/.test(kind)) return renderButtonComponent(component, accent)
+  if (/(input|textarea|field)/.test(kind)) return renderInputComponent(component)
+  if (/composer/.test(kind)) return renderComposerComponent(component, accent)
+  if (/(toggle|switch|approve)/.test(kind)) return renderToggleComponent(component, accent)
+  if (/(widget|card|container)/.test(kind)) return renderWidgetComponent(component, accent)
+  if (/(preview|panel|inspector|editor)/.test(kind)) return renderPanelComponent(component, accent)
+  return renderGenericComponent(component, accent)
 }
 
-// ── Command palette ───────────────────────────────────────────────────────────
+function componentHeader(component, label = 'Component') {
+  return `<header>
+    <span class="component-kicker">${escapeHtml(label)}</span>
+    <h3>${escapeHtml(component.title)}</h3>
+  </header>`
+}
+
+function demoLabel(label) {
+  return `<div class="demo-label">${escapeHtml(label)}</div>`
+}
+
+function renderButtonComponent(component, accent) {
+  const variants = component.variants.length ? component.variants : ['Primary', 'Secondary', 'Ghost']
+  const sizes = component.sizes.length ? component.sizes : ['Small', 'Medium', 'Large']
+  const states = component.states.length ? component.states : ['Default', 'Hover', 'Disabled']
+  return `<section class="component-card component-card--button">
+    ${componentHeader(component)}
+    <div class="component-demo">
+      <div>${demoLabel('Variants')}<div class="demo-row">
+        ${variants.map((variant, i) => `<button class="demo-button ${variantClass(variant, i)}" style="${/primary/i.test(variant) || i === 0 ? `--demo-accent:${escapeHtml(accent)}` : ''}">${escapeHtml(variant)}</button>`).join('')}
+      </div></div>
+      <div>${demoLabel('Sizes')}<div class="demo-row demo-row--baseline">
+        ${sizes.map(size => `<button class="demo-button primary size-${sizeClass(size)}" style="--demo-accent:${escapeHtml(accent)}">${escapeHtml(size)}</button>`).join('')}
+      </div></div>
+      <div>${demoLabel('States')}<div class="demo-row">
+        ${states.map(state => `<button class="demo-button ${stateClass(state)}" ${/disabled/i.test(state) ? 'disabled' : ''} style="${/loading|selected|active/i.test(state) ? `--demo-accent:${escapeHtml(accent)}` : ''}">${/loading/i.test(state) ? '<span class="button-loader" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>' : ''}${escapeHtml(state)}</button>`).join('')}
+      </div></div>
+    </div>
+  </section>`
+}
+
+function renderInputComponent(component) {
+  const variants = component.variants.length ? component.variants : ['Default', 'With value', 'Disabled']
+  return `<section class="component-card component-card--input">
+    ${componentHeader(component)}
+    <div class="component-demo">
+      ${variants.map(variant => {
+        const disabled = /disabled/i.test(variant)
+        const value = /value/i.test(variant) ? 'Hello, world' : ''
+        return `<label class="demo-field">
+          <span>${escapeHtml(variant)}</span>
+          <input class="demo-input" ${disabled ? 'disabled' : ''} value="${escapeHtml(value)}" placeholder="Placeholder text..." />
+        </label>`
+      }).join('')}
+    </div>
+  </section>`
+}
+
+function renderComposerComponent(component, accent) {
+  return `<section class="component-card component-card--composer">
+    ${componentHeader(component, 'AI surface')}
+    <div class="composer-preview" style="--demo-accent:${escapeHtml(accent)}">
+      <div class="composer-rim"></div>
+      <div class="composer-attachments">
+        <span>logs-service.md</span>
+        <span>dashboard.json</span>
+      </div>
+      <div class="composer-text">Ask Bits to investigate the spike in checkout latency...</div>
+      <div class="composer-actions">
+        <button class="demo-icon-button">＋</button>
+        <button class="demo-icon-button">🎙</button>
+        <span class="auto-toggle is-on"><b>Auto-approve</b><i></i></span>
+        <button class="demo-button primary size-small" style="--demo-accent:${escapeHtml(accent)}">Send</button>
+      </div>
+    </div>
+  </section>`
+}
+
+function renderToggleComponent(component, accent) {
+  return `<section class="component-card component-card--toggle">
+    ${componentHeader(component, 'Control')}
+    <div class="toggle-preview">
+      <span class="auto-toggle"><b>Auto-approve</b><i></i></span>
+      <span class="auto-toggle is-on" style="--demo-accent:${escapeHtml(accent)}"><b>Auto-approve</b><i></i></span>
+      <span class="toggle-tooltip">Automatically approve all tool calls without requiring confirmation.</span>
+    </div>
+  </section>`
+}
+
+function renderWidgetComponent(component, accent) {
+  return `<section class="component-card component-card--widget">
+    ${componentHeader(component, 'Surface')}
+    <div class="widget-grid" style="--demo-accent:${escapeHtml(accent)}">
+      <div class="demo-widget selected"><strong>Checkout latency</strong><span>p95 · 842ms</span><em>Investigating</em></div>
+      <div class="demo-widget"><strong>Error rate</strong><span>0.42%</span><em>Normal</em></div>
+      <div class="demo-widget error"><strong>Deploy health</strong><span>2 failing checks</span><em>Needs attention</em></div>
+    </div>
+  </section>`
+}
+
+function renderPanelComponent(component, accent) {
+  return `<section class="component-card component-card--panel">
+    ${componentHeader(component, 'Panel')}
+    <div class="panel-preview" style="--demo-accent:${escapeHtml(accent)}">
+      <div class="panel-tabs"><span class="active">Overview</span><span>Components</span><span>Animations</span></div>
+      <div class="panel-body">
+        <div class="panel-section"><b>Button</b><p>Primary, secondary, ghost, and loading states.</p></div>
+        <div class="panel-section"><b>Input</b><p>Default, value, focus, disabled, invalid.</p></div>
+      </div>
+    </div>
+  </section>`
+}
+
+function renderGenericComponent(component, accent) {
+  return `<section class="component-card">
+    ${componentHeader(component)}
+    <div class="component-demo">
+      <div>${demoLabel('Variants')}<div class="demo-row">
+        ${component.variants.map((variant, i) => `<button class="demo-button ${variantClass(variant, i)}" style="${i === 0 ? `--demo-accent:${escapeHtml(accent)}` : ''}">${escapeHtml(variant)}</button>`).join('')}
+      </div></div>
+      <div>${demoLabel('States')}<div class="demo-row">
+        ${component.states.map(state => `<span class="state-chip ${stateClass(state)}">${escapeHtml(state)}</span>`).join('')}
+      </div></div>
+    </div>
+  </section>`
+}
+
+function variantClass(variant, index) {
+  if (/danger|destructive|error/i.test(variant)) return 'danger'
+  if (/ghost|link|text/i.test(variant)) return 'ghost'
+  if (/secondary|neutral/i.test(variant)) return 'secondary'
+  if (/primary|accent|main/i.test(variant) || index === 0) return 'primary'
+  return 'secondary'
+}
+
+function sizeClass(size) {
+  if (/xsmall|xs/i.test(size)) return 'xsmall'
+  if (/small|sm/i.test(size)) return 'small'
+  if (/large|lg/i.test(size)) return 'large'
+  return 'medium'
+}
+
+function stateClass(state) {
+  if (/disabled/i.test(state)) return 'disabled'
+  if (/loading|thinking|streaming/i.test(state)) return 'loading secondary'
+  if (/selected|active|focus|hover/i.test(state)) return 'selected secondary'
+  if (/error|danger|invalid/i.test(state)) return 'danger'
+  return 'secondary'
+}
+
+function setPreviewTab(tab) {
+  activePreviewTab = tab
+  previewTabs.forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab))
+  documentPreview.classList.toggle('hidden', tab !== 'document')
+  tokensPreview.classList.toggle('hidden', tab !== 'tokens')
+  componentsPreview.classList.toggle('hidden', tab !== 'components')
+}
+
+function setTheme(nextTheme) {
+  theme = nextTheme
+  app.dataset.theme = theme
+  themeBtn.textContent = theme === 'dark' ? 'Light' : 'Dark'
+  setPrefs({ theme })
+}
+
+function setPaneMode(nextMode) {
+  paneMode = paneMode === nextMode ? 'split' : nextMode
+  app.dataset.paneMode = paneMode
+}
 
 function openPalette() {
   paletteIndex = 0
-  paletteOpenPlans = allPlans
   palette.classList.remove('hidden')
   paletteInput.value = ''
-  renderPaletteFilters()
-  renderPaletteList()
+  renderPalette()
   paletteInput.focus()
 }
 
 function closePalette() {
   palette.classList.add('hidden')
-  paletteInput.value = ''
-  paletteOpenPlans = []
-  if (paletteRenderFrame) {
-    cancelAnimationFrame(paletteRenderFrame)
-    paletteRenderFrame = null
-  }
 }
 
-function renderPaletteList() {
-  const previousScroll = paletteList.scrollTop
-  paletteList.innerHTML = ''
+function commandItems() {
+  return [
+    ...docs.map(doc => ({ type: 'doc', label: doc.title, detail: doc.filename, run: () => openDoc(doc.filename) })),
+    { type: 'action', label: 'New design.md', detail: 'Create a new local document', run: () => createDoc() },
+    { type: 'action', label: 'Toggle theme', detail: theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode', run: () => setTheme(theme === 'dark' ? 'light' : 'dark') },
+    { type: 'action', label: 'Focus editor', detail: 'Move cursor to markdown editor', run: () => editor.focus() },
+    { type: 'action', label: 'Focus preview', detail: 'Move focus to live preview', run: () => previewScroll.focus() },
+  ]
+}
+
+function renderPalette() {
   const q = paletteInput.value.trim().toLowerCase()
-  const sourcePlans = paletteOpenPlans.length ? paletteOpenPlans : allPlans
-  const sourceSearchPlans = paletteOpenPlans.length
-    ? paletteOpenPlans.map(plan => ({
-      plan,
-      searchText: [
-        plan.title,
-        plan.repo,
-        plan.summary,
-        plan.trigger,
-        statusLabelFor(plan.status || (plan.live ? 'needs_review' : 'reviewed')),
-      ].filter(Boolean).join(' ').toLowerCase(),
-    }))
-    : paletteSearchPlans
-
-  if (q) {
-    paletteResults = sourceSearchPlans
-      .filter(entry => entry.searchText.includes(q))
-      .map(entry => entry.plan)
-  } else {
-    paletteResults = [...sourcePlans]
-  }
-
-  paletteResults = paletteResults
-    .filter(planMatchesPaletteFilter)
-    .sort(comparePlansForReview)
-    .slice(0, q ? 50 : 24)
-
-  if (paletteIndex >= paletteResults.length) paletteIndex = Math.max(0, paletteResults.length - 1)
-
-  if (!paletteResults.length) {
-    paletteList.innerHTML = '<li class="palette-empty">No plans found</li>'
-    return
-  }
-
-  let lastRepo = null
-  paletteResults.forEach((plan, i) => {
-    if (plan.repo !== lastRepo) {
-      const group = document.createElement('li')
-      group.className = 'palette-group-label'
-      group.textContent = plan.repo
-      paletteList.appendChild(group)
-      lastRepo = plan.repo
-    }
-    const status = plan.status || (plan.live ? 'needs_review' : 'reviewed')
-    const statusLabel = statusLabelFor(status)
-    const li = document.createElement('li')
-    li.className = 'palette-item' + (i === paletteIndex ? ' palette-active' : '')
-    li.dataset.index = String(i)
-    li.innerHTML = `
-      <span class="palette-icon status-${escapeHtml(status)}" title="${escapeHtml(statusLabel)}" aria-label="${escapeHtml(statusLabel)}"></span>
-      <span class="palette-item-title">${escapeHtml(plan.title)}</span>
-      <span class="palette-item-meta">${plan.versionCount ? `v${plan.versionCount + 1} · ` : ''}${formatRelativeDate(plan.modified)}</span>`
-    paletteList.appendChild(li)
-  })
-
-  paletteList.scrollTop = previousScroll
+  paletteItems = commandItems().filter(item => !q || `${item.label} ${item.detail}`.toLowerCase().includes(q))
+  if (paletteIndex >= paletteItems.length) paletteIndex = Math.max(0, paletteItems.length - 1)
+  paletteList.innerHTML = paletteItems.map((item, i) => `
+    <li class="palette-item ${i === paletteIndex ? 'active' : ''}" data-index="${i}">
+      <span>${item.type === 'doc' ? '#' : '⌘'}</span>
+      <strong>${escapeHtml(item.label)}</strong>
+      <em>${escapeHtml(item.detail)}</em>
+    </li>`).join('') || '<li class="palette-empty">No results.</li>'
 }
 
-const PALETTE_FILTERS = [
-  { id: 'attention', label: 'Attention' },
-  { id: 'needs_review', label: 'Needs review' },
-  { id: 'changes_requested', label: 'Changes requested' },
-  { id: 'approved', label: 'Approved' },
-  { id: 'implemented', label: 'Implemented' },
-  { id: 'all', label: 'All' },
-]
-
-function renderPaletteFilters() {
-  if (!paletteFilters) return
-  paletteFilters.innerHTML = PALETTE_FILTERS.map(filter =>
-    `<button class="palette-filter${paletteFilter === filter.id ? ' active' : ''}" data-filter="${filter.id}">${filter.label}</button>`
-  ).join('')
-}
-
-function planStatus(plan) {
-  return plan.status || (plan.live ? 'needs_review' : 'reviewed')
-}
-
-function planMatchesPaletteFilter(plan) {
-  const status = planStatus(plan)
-  if (paletteFilter === 'all') return true
-  if (paletteFilter === 'attention') return status === 'needs_review' || status === 'changes_requested'
-  return status === paletteFilter
-}
-
-function comparePlansForReview(a, b) {
-  const priority = {
-    needs_review: 0,
-    changes_requested: 1,
-    in_progress: 2,
-    approved: 3,
-    implemented: 4,
-    reviewed: 5,
-  }
-  const ap = priority[planStatus(a)] ?? 9
-  const bp = priority[planStatus(b)] ?? 9
-  if (ap !== bp) return ap - bp
-  return new Date(b.modified) - new Date(a.modified)
-}
-
-function updatePaletteActive({ scroll = true } = {}) {
-  const items = paletteList.querySelectorAll('.palette-item')
-  items.forEach(el => el.classList.toggle('palette-active', Number(el.dataset.index) === paletteIndex))
-  if (scroll) {
-    paletteList.querySelector(`.palette-item[data-index="${paletteIndex}"]`)?.scrollIntoView({ block: 'nearest' })
-  }
-}
-
-function paletteItemFromPoint(clientX, clientY) {
-  const rect = paletteList.getBoundingClientRect()
-  if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null
-  return [...paletteList.querySelectorAll('.palette-item')].find(item => {
-    const itemRect = item.getBoundingClientRect()
-    return clientY >= itemRect.top && clientY <= itemRect.bottom
-  }) || null
-}
-
-function openPaletteResult(index = paletteIndex) {
-  const plan = paletteResults[index]
-  if (!plan) return
-  openPlan(plan)
+function runPaletteItem(index = paletteIndex) {
+  const item = paletteItems[index]
+  if (!item) return
+  item.run()
   closePalette()
 }
 
-function schedulePaletteRender({ resetIndex = false } = {}) {
-  if (resetIndex) paletteIndex = 0
-  if (paletteRenderFrame) cancelAnimationFrame(paletteRenderFrame)
-  paletteRenderFrame = requestAnimationFrame(() => {
-    paletteRenderFrame = null
-    renderPaletteList()
-  })
+async function createDoc() {
+  const title = prompt('Document title?', 'New Design Language')
+  if (!title) return
+  const project = prompt('Project folder?', 'local') || 'local'
+  const filename = await window.planAPI.createDesignDoc(project, title)
+  if (!filename) return setToast('Could not create document')
+  docs = (await window.planAPI.getDesignDocs()).map(normalizeDoc)
+  await openDoc(filename)
+  setToast('Document created')
 }
 
-paletteInput.addEventListener('input', () => schedulePaletteRender({ resetIndex: true }))
+async function renameDoc() {
+  if (!activeFilename) return
+  const next = prompt('Rename file path', activeFilename)
+  if (!next || next === activeFilename) return
+  const filename = await window.planAPI.renameDesignDoc(activeFilename, next)
+  if (!filename) return setToast('Could not rename document')
+  docs = (await window.planAPI.getDesignDocs()).map(normalizeDoc)
+  await openDoc(filename)
+  setToast('Document renamed')
+}
 
-paletteFilters?.addEventListener('click', e => {
-  const btn = e.target.closest?.('.palette-filter')
-  if (!btn) return
-  paletteFilter = btn.dataset.filter || 'attention'
-  renderPaletteFilters()
-  schedulePaletteRender({ resetIndex: true })
+async function deleteDoc() {
+  if (!activeFilename || !confirm(`Delete ${activeFilename}?`)) return
+  const ok = await window.planAPI.deleteDesignDoc(activeFilename)
+  if (!ok) return setToast('Could not delete document')
+  docs = (await window.planAPI.getDesignDocs()).map(normalizeDoc)
+  activeFilename = null
+  editor.value = ''
+  renderDocLists()
+  if (docs[0]) await openDoc(docs[0].filename)
+  setToast('Document deleted')
+}
+
+editor.addEventListener('input', () => {
+  activeContent = editor.value
+  activeTitle.textContent = titleFromMarkdown(activeContent, activeFilename || 'design.md')
+  updateAll()
+  scheduleSave()
 })
 
-function activatePaletteItemFromEvent(e) {
-  const item = e.target.closest?.('.palette-item') || paletteItemFromPoint(e.clientX, e.clientY)
-  if (!item || !paletteList.contains(item)) return
-  const nextIndex = Number(item.dataset.index)
-  if (!Number.isFinite(nextIndex) || nextIndex === paletteIndex) return
-  paletteIndex = nextIndex
-  updatePaletteActive({ scroll: false })
-}
-
-function openPaletteItemFromEvent(e) {
-  const item = e.target.closest?.('.palette-item') || paletteItemFromPoint(e.clientX, e.clientY)
-  if (!item || !paletteList.contains(item)) return
-  e.preventDefault()
-  openPaletteResult(Number(item.dataset.index))
-}
-
-paletteList.addEventListener('pointerover', activatePaletteItemFromEvent)
-paletteList.addEventListener('pointermove', activatePaletteItemFromEvent)
-paletteList.addEventListener('mouseover', activatePaletteItemFromEvent)
-paletteList.addEventListener('mousemove', activatePaletteItemFromEvent)
-
-paletteList.addEventListener('pointerdown', e => {
-  if (e.button !== 0) return
-  openPaletteItemFromEvent(e)
+editor.addEventListener('scroll', () => {
+  lineNumbers.scrollTop = editor.scrollTop
+  if (!syncScrollToggle.checked || syncingScroll) return
+  syncingScroll = true
+  const maxEditor = editor.scrollHeight - editor.clientHeight
+  const maxPreview = previewScroll.scrollHeight - previewScroll.clientHeight
+  previewScroll.scrollTop = maxEditor > 0 ? (editor.scrollTop / maxEditor) * maxPreview : 0
+  syncingScroll = false
 })
 
-paletteList.addEventListener('click', openPaletteItemFromEvent)
+previewScroll.addEventListener('scroll', () => {
+  if (!syncScrollToggle.checked || syncingScroll) return
+  syncingScroll = true
+  const maxPreview = previewScroll.scrollHeight - previewScroll.clientHeight
+  const maxEditor = editor.scrollHeight - editor.clientHeight
+  editor.scrollTop = maxPreview > 0 ? (previewScroll.scrollTop / maxPreview) * maxEditor : 0
+  lineNumbers.scrollTop = editor.scrollTop
+  syncingScroll = false
+})
 
-document.addEventListener('mousemove', e => {
-  if (palette.classList.contains('hidden')) return
-  activatePaletteItemFromEvent(e)
-}, true)
+docList.addEventListener('click', e => {
+  const row = e.target.closest('.doc-row')
+  if (row) openDoc(row.dataset.filename)
+})
 
-document.addEventListener('pointermove', e => {
-  if (palette.classList.contains('hidden')) return
-  activatePaletteItemFromEvent(e)
-}, true)
+recentList.addEventListener('click', e => {
+  const row = e.target.closest('.recent-row')
+  if (row) openDoc(row.dataset.filename)
+})
 
-document.addEventListener('pointerdown', e => {
-  if (palette.classList.contains('hidden') || e.button !== 0) return
-  const item = paletteItemFromPoint(e.clientX, e.clientY)
-  if (!item) return
-  e.preventDefault()
-  e.stopPropagation()
-  openPaletteResult(Number(item.dataset.index))
-}, true)
+previewTabs.forEach(tab => tab.addEventListener('click', () => setPreviewTab(tab.dataset.tab)))
+newDocBtn.addEventListener('click', createDoc)
+importPlaceholderBtn.addEventListener('click', createDoc)
+renameDocBtn.addEventListener('click', renameDoc)
+deleteDocBtn.addEventListener('click', deleteDoc)
+saveBtn.addEventListener('click', () => saveNow().then(() => setToast('Saved')))
+copyBtn.addEventListener('click', () => {
+  navigator.clipboard.writeText(editor.value).catch(() => {})
+  setToast('design.md copied')
+})
+themeBtn.addEventListener('click', () => setTheme(theme === 'dark' ? 'light' : 'dark'))
+commandBtn.addEventListener('click', openPalette)
+editorFullBtn.addEventListener('click', () => setPaneMode('editor'))
+previewFullBtn.addEventListener('click', () => setPaneMode('preview'))
+sidebarToggle.addEventListener('click', () => app.classList.toggle('rail-hidden'))
 
+paletteInput.addEventListener('input', () => { paletteIndex = 0; renderPalette() })
 paletteInput.addEventListener('keydown', e => {
   if (e.key === 'ArrowDown') {
     e.preventDefault()
-    paletteIndex = Math.min(paletteIndex + 1, paletteResults.length - 1)
-    updatePaletteActive({ scroll: true })
+    paletteIndex = Math.min(paletteIndex + 1, paletteItems.length - 1)
+    renderPalette()
   } else if (e.key === 'ArrowUp') {
     e.preventDefault()
     paletteIndex = Math.max(paletteIndex - 1, 0)
-    updatePaletteActive({ scroll: true })
+    renderPalette()
   } else if (e.key === 'Enter') {
-    openPaletteResult()
+    e.preventDefault()
+    runPaletteItem()
   } else if (e.key === 'Escape') {
     closePalette()
   }
 })
-
+paletteList.addEventListener('pointermove', e => {
+  const item = e.target.closest('.palette-item')
+  if (!item) return
+  paletteIndex = Number(item.dataset.index)
+  renderPalette()
+})
+paletteList.addEventListener('click', e => {
+  const item = e.target.closest('.palette-item')
+  if (item) runPaletteItem(Number(item.dataset.index))
+})
 paletteBackdrop.addEventListener('click', closePalette)
 
-// ── Diff view ─────────────────────────────────────────────────────────────────
-
-function lcsOps(a, b) {
-  const m = a.length, n = b.length
-  const dp = new Array(m + 1)
-  for (let i = 0; i <= m; i++) dp[i] = new Int32Array(n + 1)
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] + 1 : Math.max(dp[i-1][j], dp[i][j-1])
-    }
-  }
-  const ops = []
-  let i = m, j = n
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && a[i-1] === b[j-1]) {
-      ops.push({ type: 'equal', value: a[i-1] }); i--; j--
-    } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
-      ops.push({ type: 'insert', value: b[j-1] }); j--
-    } else {
-      ops.push({ type: 'delete', value: a[i-1] }); i--
-    }
-  }
-  return ops.reverse()
-}
-
-function buildHunks(ops, context = 4) {
-  const changes = ops.reduce((acc, op, i) => { if (op.type !== 'equal') acc.push(i); return acc }, [])
-  if (!changes.length) return []
-  const ranges = []
-  let rs = Math.max(0, changes[0] - context), re = Math.min(ops.length - 1, changes[0] + context)
-  for (let k = 1; k < changes.length; k++) {
-    const ns = Math.max(0, changes[k] - context), ne = Math.min(ops.length - 1, changes[k] + context)
-    if (ns <= re + 1) { re = ne } else { ranges.push([rs, re]); rs = ns; re = ne }
-  }
-  ranges.push([rs, re])
-  return ranges.map(([s, e]) => ops.slice(s, e + 1))
-}
-
-function renderDiff(oldContent, newContent) {
-  diffPanel.innerHTML = ''
-  const ops   = lcsOps(oldContent.split('\n'), newContent.split('\n'))
-  const hunks = buildHunks(ops)
-
-  if (!hunks.length) {
-    diffPanel.innerHTML = '<p class="diff-no-changes">No changes between this version and current.</p>'
-    return
-  }
-
-  const container = document.createElement('div')
-  container.className = 'diff-container'
-
-  hunks.forEach((hunk, hi) => {
-    if (hi > 0) {
-      const sep = document.createElement('div')
-      sep.className = 'diff-separator'
-      container.appendChild(sep)
-    }
-    hunk.forEach(op => {
-      const row = document.createElement('div')
-      row.className = `diff-line diff-${op.type}`
-      const prefix = op.type === 'delete' ? '−' : op.type === 'insert' ? '+' : ' '
-      row.innerHTML = `<span class="diff-gutter">${escapeHtml(prefix)}</span><span class="diff-text">${escapeHtml(op.value)}</span>`
-      container.appendChild(row)
-    })
-  })
-
-  diffPanel.appendChild(container)
-}
-
-diffBtn.addEventListener('click', async () => {
-  if (!isDiffMode) {
-    const currentContent = await window.planAPI.getPlanContent(activePlan)
-    if (!currentContent || !activeContent) return
-
-    isDiffMode = true
-    docContent.classList.add('hidden')
-    tocPanel.classList.add('hidden')
-    diffPanel.classList.remove('hidden')
-    renderDiff(activeContent, currentContent)
-    diffBtn.textContent = 'Rendered'
-  } else {
-    isDiffMode = false
-    diffPanel.classList.add('hidden')
-    diffPanel.innerHTML = ''
-    docContent.classList.remove('hidden')
-    diffBtn.textContent = 'Diff'
-  }
-})
-
-// ── Step-through mode ─────────────────────────────────────────────────────────
-
-function splitIntoSections(content) {
-  const body   = stripTitle(content).trim()
-  const chunks = body.split(/^(?=## )/m).filter(c => c.trim())
-  if (!chunks.length) return [{ title: 'Plan', content: body }]
-  return chunks.map(chunk => {
-    const m = chunk.match(/^## (.+)/)
-    return { title: m ? m[1].trim() : 'Overview', content: chunk.trim() }
-  })
-}
-
-function renderStep() {
-  const sec    = stepSections[stepIndex]
-  const total  = stepSections.length
-  const isLast = stepIndex === total - 1
-
-  // Step navigator — all sections as clickable pills
-  stepNav.innerHTML = stepSections.map((s, i) => {
-    const state = i < stepIndex ? 'done' : i === stepIndex ? 'active' : 'todo'
-    const glyph = i < stepIndex ? '✓' : i === stepIndex ? '▶' : String(i + 1)
-    return `<button class="step-nav-item step-nav-${state}" data-i="${i}">
-      <span class="step-nav-num">${glyph}</span>
-      <span class="step-nav-title">${escapeHtml(s.title)}</span>
-    </button>`
-  }).join('')
-
-  stepNav.querySelectorAll('.step-nav-item').forEach(btn =>
-    btn.addEventListener('click', () => { stepIndex = +btn.dataset.i; renderStep() })
-  )
-  stepNav.querySelector('.step-nav-active')?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
-
-  // Footer meta: position + what's next
-  const nextSec = !isLast ? stepSections[stepIndex + 1] : null
-  stepMeta.textContent = nextSec
-    ? `${stepIndex + 1} / ${total}  ·  Next: ${nextSec.title}`
-    : `${stepIndex + 1} / ${total}  ·  Last section`
-
-  stepContent.innerHTML   = marked.parse(sec.content)
-  stepPrevBtn.disabled    = stepIndex === 0
-  stepNextBtn.textContent = isLast ? 'Done ✓' : 'Next →'
-  stepNextBtn.className   = isLast ? 'btn-approve' : 'btn-send'
-  stepBody.scrollTop = 0
-}
-
-const switcherIndicator = viewSwitcher.querySelector('.switcher-indicator')
-
-function placeSwitcherIndicator(animate) {
-  const activeBtn = isStepMode ? switcherStep : switcherFull
-  if (!switcherIndicator || !activeBtn) return
-  if (!animate) switcherIndicator.style.transition = 'none'
-  requestAnimationFrame(() => {
-    const vRect = viewSwitcher.getBoundingClientRect()
-    const bRect = activeBtn.getBoundingClientRect()
-    switcherIndicator.style.left  = (bRect.left - vRect.left) + 'px'
-    switcherIndicator.style.width = bRect.width + 'px'
-    if (!animate) {
-      switcherIndicator.offsetWidth // force reflow
-      switcherIndicator.style.transition = 'left 0.22s cubic-bezier(0.34,1.2,0.64,1), width 0.22s cubic-bezier(0.34,1.2,0.64,1)'
-    }
-  })
-}
-
-function enterStepMode() {
-  stepSections = splitIntoSections(activeContent)
-  if (!stepSections.length) return
-  stepIndex  = 0
-  isStepMode = true
-  workspaceShell.classList.add('step-mode')
-  // Exit diff mode if active
-  if (isDiffMode) {
-    isDiffMode = false
-    diffPanel.classList.add('hidden')
-    diffPanel.innerHTML = ''
-    diffBtn.textContent = 'Diff'
-  }
-  viewer.classList.add('hidden')
-  stepPanel.classList.remove('hidden')
-  renderStep()
-  switcherFull.classList.remove('active')
-  switcherStep.classList.add('active')
-  placeSwitcherIndicator(true)
-}
-
-function exitStepMode() {
-  isStepMode   = false
-  stepSections = []
-  workspaceShell.classList.remove('step-mode')
-  stepPanel.classList.add('hidden')
-  viewer.classList.remove('hidden')
-  switcherStep.classList.remove('active')
-  switcherFull.classList.add('active')
-  placeSwitcherIndicator(true)
-}
-
-switcherFull.addEventListener('click', () => { if (isStepMode) exitStepMode() })
-switcherStep.addEventListener('click', () => { if (!isStepMode) enterStepMode() })
-stepPrevBtn.addEventListener('click', () => { if (stepIndex > 0) { stepIndex--; renderStep() } })
-stepNextBtn.addEventListener('click', () => {
-  if (stepIndex < stepSections.length - 1) { stepIndex++; renderStep() }
-  else exitStepMode()
-})
-
-function buildFeedbackMessage() {
-  if (comments.length === 0) {
-    return activeContent + '\n\n---\n\nApproved. Please proceed with the implementation.'
-  }
-  let msg = 'I\'ve reviewed the plan. Please revise it based on the structured annotations below, then present the updated plan for approval.\n\n'
-  msg += '---\n\n'
-  msg += activeContent.trimEnd()
-  msg += '\n\n---\n\nReview checklist:\n\n'
-  for (const [key, label] of REVIEW_CHECKLIST_ITEMS) {
-    msg += `- ${getReviewChecklist()[key] ? '[x]' : '[ ]'} ${label}\n`
-  }
-  msg += '\n\n---\n\nAnnotations:\n\n'
-  for (const group of groupedAnnotations(comments)) {
-    msg += `### ${annotationTypeLabel(group.type)}\n\n`
-    for (const c of group.items) {
-      msg += `> "${c.quote.substring(0, 200)}${c.quote.length > 200 ? '…' : ''}"\n`
-      msg += `Note: ${c.note}\n\n`
-    }
-  }
-  return msg.trimEnd()
-}
-
-function groupedAnnotations(items) {
-  const order = ['risk', 'question', 'replace', 'delete', 'insert', 'comment']
-  return order
-    .map(type => ({ type, items: items.filter(c => (c.type || 'comment') === type) }))
-    .filter(group => group.items.length)
-}
-
-function annotationTypeLabel(type) {
-  return {
-    comment: 'Comment',
-    question: 'Question',
-    risk: 'Risk',
-    replace: 'Replace',
-    delete: 'Delete',
-    insert: 'Insert',
-  }[type] || 'Comment'
-}
-
-function reviewDecisionLabel(decision) {
-  return {
-    approved: 'Approved',
-    changes_requested: 'Changes requested',
-    dismissed: 'Dismissed',
-  }[decision] || 'Reviewed'
-}
-
-function buildReviewPayload(decision) {
-  const summary = {
-    approved: 'Plan approved for implementation.',
-    changes_requested: `Requested changes with ${comments.length} structured ${comments.length === 1 ? 'annotation' : 'annotations'}.`,
-    dismissed: 'Plan dismissed without approval.',
-    draft: 'Draft review checklist.',
-  }[decision] || 'Plan reviewed.'
-  return {
-    decision,
-    decidedAt: new Date().toISOString(),
-    annotationCount: comments.length,
-    annotations: comments.map(c => ({
-      id: c.id,
-      type: c.type || 'comment',
-      quote: c.quote,
-      note: c.note,
-      author: c.author || null,
-      timestamp: c.timestamp,
-    })),
-    checklist: getReviewChecklist(),
-    summary,
-    source: window.WEB_MODE ? 'web' : 'desktop',
-  }
-}
-
-function renderReviewBanner() {
-  if (!reviewBanner) return
-  reviewBanner.className = 'hidden'
-  reviewBanner.textContent = ''
-  if (!currentReview || allPlans.find(p => p.filename === activePlan)?.live) return
-
-  const decision = currentReview.decision || 'reviewed'
-  if (decision === 'draft') return
-  const count = Number(currentReview.annotationCount || currentReview.annotations?.length || 0)
-  const date = currentReview.decidedAt ? formatDate(currentReview.decidedAt) : 'previously'
-  reviewBanner.classList.remove('hidden')
-  reviewBanner.classList.add(decision === 'changes_requested' ? 'changes-requested' : decision)
-  reviewBanner.textContent = `${reviewDecisionLabel(decision)} ${date}${count ? ` · ${count} ${count === 1 ? 'annotation' : 'annotations'}` : ''}`
-}
-
-// ── Plan tabs ─────────────────────────────────────────────────────────────────
-
-function normalizeOpenTabs() {
-  const valid = new Set(allPlans.map(p => p.filename))
-  openTabs = [...new Set(openTabs)].filter(f => valid.has(f))
-}
-
-function ensureOpenTab(filename) {
-  if (!filename) return
-  if (!openTabs.includes(filename)) openTabs.push(filename)
-}
-
-function renderTabs() {
-  normalizeOpenTabs()
-  if (!tabStrip) {
-    persistPrefs()
-    return
-  }
-  tabStrip.innerHTML = ''
-
-  for (const filename of openTabs) {
-    const plan = planByFilename(filename)
-    if (!plan) continue
-    const status = plan.status || (plan.live ? 'needs_review' : 'reviewed')
-    const statusLabel = statusLabelFor(status)
-    const tab = document.createElement('button')
-    tab.className = 'plan-tab' + (filename === activePlan ? ' active' : '') + (plan.live ? ' live-tab' : '')
-    tab.title = plan.title
-    tab.innerHTML = `
-      <span class="tab-status status-${escapeHtml(status)}" title="${escapeHtml(statusLabel)}" aria-label="${escapeHtml(statusLabel)}"></span>
-      <span class="tab-title">${escapeHtml(plan.title)}</span>
-      <span class="tab-meta">${escapeHtml(plan.repo)}</span>
-      <span class="tab-close" title="Close">×</span>`
-    tab.addEventListener('click', () => openPlan(plan, { fromTab: true }))
-    tab.querySelector('.tab-close').addEventListener('click', e => {
-      e.stopPropagation()
-      closeTab(filename)
-    })
-    tabStrip.appendChild(tab)
-  }
-  persistPrefs()
-}
-
-function statusLabelFor(status) {
-  return {
-    needs_review: 'Needs review',
-    changes_requested: 'Changes requested',
-    in_progress: 'In progress',
-    implemented: 'Implemented',
-    approved: 'Approved',
-    draft: 'Draft review',
-    reviewed: 'Reviewed',
-  }[status] || 'Reviewed'
-}
-
-function closeTab(filename) {
-  const idx = openTabs.indexOf(filename)
-  if (idx === -1) return
-  openTabs.splice(idx, 1)
-
-  if (activePlan === filename) {
-    const nextFilename = openTabs[Math.min(idx, openTabs.length - 1)]
-    if (nextFilename) {
-      const nextPlan = planByFilename(nextFilename)
-      if (nextPlan) openPlan(nextPlan, { fromTab: true })
-    } else {
-      activePlan = null
-      activeContent = ''
-      activeTrigger = null
-      comments = []
-      currentReview = null
-      snapshots = []
-      planHeader.classList.add('hidden')
-      viewer.classList.add('hidden')
-      stepPanel.classList.add('hidden')
-      versionBanner.classList.add('hidden')
-      reviewBanner?.classList.add('hidden')
-      liveBar.classList.add('hidden')
-      emptyState.classList.remove('hidden')
-      panelToggleBtn.classList.add('hidden')
-      contextPanel.classList.add('hidden')
-    }
-  }
-  renderTabs()
-}
-
-function renderList() {
-  renderTabs()
-}
-
-tabNewBtn?.addEventListener('click', openPalette)
-
-// ── Plan open ─────────────────────────────────────────────────────────────────
-
-async function openPlan(plan, opts = {}) {
-  activePlan      = plan.filename
-  activeContent   = ''
-  activeTrigger   = plan.trigger || null
-  triggerExpanded = false
-  snapshots       = []
-  activeSnapshot  = null
-  comments        = []
-  currentReview   = null
-  pendingQuote    = ''
-  planReferences  = []
-  activeRefPath   = null
-  tocPanel.classList.add('hidden')
-  versionBanner.classList.add('hidden')
-  reviewBanner?.classList.add('hidden')
-  isDiffMode = false
-  diffBtn.classList.add('hidden')
-  diffBtn.textContent = 'Diff'
-  diffPanel.classList.add('hidden')
-  diffPanel.innerHTML = ''
-  if (isStepMode) {
-    isStepMode   = false
-    stepSections = []
-    workspaceShell.classList.remove('step-mode')
-    stepPanel.classList.add('hidden')
-  }
-  viewSwitcher.classList.remove('hidden')
-  switcherFull.classList.add('active')
-  switcherStep.classList.remove('active')
-  hideTooltip()
-
-  if (!opts.fromTab) ensureOpenTab(plan.filename)
-  window.planAPI.setLastPlan(plan.filename)
-  renderTabs()
-
-  const content = await window.planAPI.getPlanContent(plan.filename)
-  if (!content) return
-  activeContent = content
-
-  const words = activeContent
-    .replace(/```[\s\S]*?```/g, '')
-    .replace(/[^\w\s]/g, ' ')
-    .trim().split(/\s+/).filter(Boolean).length
-  const mins = Math.max(1, Math.round(words / 200))
-
-  docTitle.textContent = plan.title
-  docDate.textContent  = `${plan.repo}  ·  ${formatDate(plan.modified)}  ·  ~${words.toLocaleString()} words  ·  ${mins} min read`
-  renderPreview()
-
-  snapshots = await window.planAPI.getSnapshots(plan.filename)
-  await loadPlanReferences()
-  renderContextPanel()
-
-  const saved = await window.planAPI.loadComments(plan.filename)
-  comments = saved || []
-  currentReview = await window.planAPI.loadReview?.(plan.filename).catch(() => null) || plan.review || null
-  applyCommentHighlights()
-
-  const isLive = plan.live
-  liveBadge.classList.toggle('hidden', !isLive)
-  liveBar.classList.toggle('hidden', !isLive)
-  approveBtn?.classList.toggle('hidden', !isLive)
-  sendBtn.classList.toggle('hidden', !isLive)
-  renderReviewBanner()
-  panelToggleBtn.classList.remove('hidden')
-  diffBtn.classList.add('hidden')
-
-  emptyState.classList.add('hidden')
-  planHeader.classList.remove('hidden')
-  viewer.classList.remove('hidden')
-  placeSwitcherIndicator(false)
-  persistPrefs()
-
-  viewerBody.scrollTop = 0
-}
-
-// ── Preview ───────────────────────────────────────────────────────────────────
-
-function stripTitle(content) {
-  return content.replace(/^#[^\n]*\n?/, '')
-}
-
-const TRIGGER_PREVIEW = 260
-
-function triggerBlock() {
-  if (!activeTrigger) return ''
-  const needsToggle = activeTrigger.length > TRIGGER_PREVIEW
-  const text = needsToggle && !triggerExpanded
-    ? activeTrigger.substring(0, TRIGGER_PREVIEW).trimEnd() + '…'
-    : activeTrigger
-  return `<div class="plan-context">
-    <span class="plan-context-label">Prompt</span>
-    <p class="plan-context-text">${escapeHtml(text)}</p>
-    ${needsToggle ? `<button class="plan-context-toggle">${triggerExpanded ? 'Show less' : 'Show more'}</button>` : ''}
-  </div>`
-}
-
-function renderPreview() {
-  docContent.innerHTML = triggerBlock() + marked.parse(stripTitle(activeContent))
-}
-
-// ── Right context panel ───────────────────────────────────────────────────────
-
-async function loadPlanReferences() {
-  try {
-    planReferences = await window.planAPI.getPlanReferences?.(activePlan) || []
-  } catch (_) {
-    planReferences = []
-  }
-  activeRefPath = planReferences.find(r => r.exists)?.path || planReferences[0]?.path || null
-}
-
-function referenceRootLabel() {
-  const root = planReferences.find(r => r.root)?.root
-  return root ? `<br><span class="panel-empty-muted">Project root: ${escapeHtml(root)}</span>` : ''
-}
-
-function setPanel(open, panel = activePanel) {
-  panelOpen = open
-  activePanel = panel
-  workspaceShell.classList.toggle('inspector-open', panelOpen)
-  contextPanel.classList.toggle('hidden', !panelOpen)
-  panelToggleBtn.classList.toggle('panel-open', panelOpen)
-  panelToggleBtn.textContent = '◫'
-  renderContextPanel()
-}
-
-function renderContextPanel() {
-  if (!activePlan) return
-  workspaceShell.classList.toggle('inspector-open', panelOpen)
-  contextPanel.classList.toggle('hidden', !panelOpen)
-  panelToggleBtn.classList.toggle('panel-open', panelOpen)
-  contextCodeTab.classList.toggle('active', activePanel === 'code')
-  contextChangesTab.classList.toggle('active', activePanel === 'changes')
-  contextReviewTab?.classList.toggle('active', activePanel === 'review')
-  codeContext.classList.toggle('hidden', activePanel !== 'code')
-  changesContext.classList.toggle('hidden', activePanel !== 'changes')
-  reviewContext?.classList.toggle('hidden', activePanel !== 'review')
-  panelToggleBtn.textContent = '◫'
-  if (activePanel === 'code') renderCodePanel()
-  else if (activePanel === 'changes') renderChangesPanel()
-  else renderReviewPanel()
-}
-
-function renderReviewPanel() {
-  if (!reviewDetail) return
-  const annotations = currentReview?.annotations?.length ? currentReview.annotations : comments
-  const checklist = currentReview?.checklist || defaultReviewChecklist()
-  if (!currentReview && !annotations.length) {
-    reviewDetail.innerHTML = `
-      ${reviewChecklistHtml(checklist)}
-      <div class="panel-empty"><strong>No review yet.</strong><br>Approve the live plan or add annotations and request changes to create a review record.</div>`
-    wireReviewChecklist()
-    return
-  }
-
-  const decision = currentReview?.decision || 'draft'
-  const decidedAt = currentReview?.decidedAt ? formatDate(currentReview.decidedAt) : 'Not decided'
-  reviewDetail.innerHTML = `
-    <div class="review-summary-card ${escapeHtml(decision)}">
-      <div class="review-summary-label">Review</div>
-      <div class="review-summary-title">${escapeHtml(decision === 'draft' ? 'Draft annotations' : reviewDecisionLabel(decision))}</div>
-      <div class="review-summary-meta">${escapeHtml(decidedAt)} · ${annotations.length} ${annotations.length === 1 ? 'annotation' : 'annotations'}</div>
-    </div>
-    ${reviewChecklistHtml(checklist)}
-    <div class="review-annotation-list">
-      ${annotations.length ? annotations.map(annotationCard).join('') : '<div class="panel-empty">No annotations were attached to this decision.</div>'}
-    </div>`
-  wireReviewChecklist()
-}
-
-const REVIEW_CHECKLIST_ITEMS = [
-  ['scope_clear', 'Scope clear'],
-  ['files_identified', 'Files identified'],
-  ['risks_noted', 'Risks noted'],
-  ['tests_included', 'Tests included'],
-  ['ambiguities_resolved', 'Ambiguities resolved'],
-]
-
-function defaultReviewChecklist() {
-  return REVIEW_CHECKLIST_ITEMS.reduce((acc, [key]) => {
-    acc[key] = false
-    return acc
-  }, {})
-}
-
-function getReviewChecklist() {
-  const base = { ...defaultReviewChecklist(), ...(currentReview?.checklist || {}) }
-  if (!reviewDetail) return base
-  reviewDetail.querySelectorAll('[data-review-check]').forEach(input => {
-    base[input.dataset.reviewCheck] = input.checked
-  })
-  return base
-}
-
-function reviewChecklistHtml(checklist) {
-  const normalized = { ...defaultReviewChecklist(), ...(checklist || {}) }
-  return `<div class="review-checklist">
-    <div class="review-checklist-title">Checklist</div>
-    ${REVIEW_CHECKLIST_ITEMS.map(([key, label]) => `
-      <label class="review-check-item">
-        <input type="checkbox" data-review-check="${key}" ${normalized[key] ? 'checked' : ''}>
-        <span>${label}</span>
-      </label>`).join('')}
-  </div>`
-}
-
-function wireReviewChecklist() {
-  reviewDetail?.querySelectorAll('[data-review-check]').forEach(input => {
-    input.addEventListener('change', saveDraftReviewChecklist)
-  })
-}
-
-async function saveDraftReviewChecklist() {
-  if (window.WEB_MODE || !activePlan) return
-  const checklist = getReviewChecklist()
-  currentReview = await window.planAPI.saveReview?.(activePlan, {
-    ...(currentReview || {}),
-    decision: currentReview?.decision || 'draft',
-    decidedAt: currentReview?.decidedAt || new Date().toISOString(),
-    annotations: currentReview?.annotations || comments,
-    annotationCount: currentReview?.annotationCount ?? comments.length,
-    checklist,
-    summary: currentReview?.summary || 'Draft review checklist.',
-    source: 'desktop',
-  }).catch(() => currentReview)
-  renderReviewBanner()
-}
-
-function annotationCard(annotation) {
-  const type = annotation.type || 'comment'
-  return `<div class="review-annotation ${annotationClass(type)}">
-    <div class="review-annotation-type">${escapeHtml(annotationTypeLabel(type))}</div>
-    <blockquote>${escapeHtml(annotation.quote || '').substring(0, 220)}</blockquote>
-    <p>${escapeHtml(annotation.note || '')}</p>
-  </div>`
-}
-
-function renderCodePanel() {
-  fileChipRow.innerHTML = ''
-  if (!planReferences.length) {
-    filePreview.innerHTML = '<div class="panel-empty"><strong>No referenced source files found.</strong><br>This plan does not mention code paths that the inspector can safely preview.</div>'
-    return
-  }
-
-  for (const ref of planReferences) {
-    const chip = document.createElement('button')
-    chip.className = 'file-chip' + (ref.path === activeRefPath ? ' active' : '') + (!ref.exists ? ' unresolved' : '')
-    chip.textContent = ref.path
-    chip.title = ref.exists ? ref.path : `${ref.path} was not found from the inferred project root`
-    chip.addEventListener('click', async () => {
-      activeRefPath = ref.path
-      renderCodePanel()
-      await renderFilePreview(ref.path)
-    })
-    fileChipRow.appendChild(chip)
-  }
-
-  const resolvedCount = planReferences.filter(ref => ref.exists).length
-  if (!resolvedCount) {
-    const count = planReferences.length
-    filePreview.innerHTML = `<div class="panel-empty"><strong>${count} possible ${count === 1 ? 'file was' : 'files were'} mentioned, but none resolved.</strong><br>The inspector only previews files inside the inferred project root. These chips are still useful as implementation clues, but no readable source file was found.${referenceRootLabel()}</div>`
-    return
-  }
-
-  renderFilePreview(activeRefPath)
-}
-
-async function renderFilePreview(refPath) {
-  if (!refPath) {
-    filePreview.innerHTML = '<div class="panel-empty">Select a referenced file.</div>'
-    return
-  }
-  const ref = planReferences.find(r => r.path === refPath)
-  if (ref && !ref.exists) {
-    filePreview.innerHTML = `<div class="panel-empty"><strong>${escapeHtml(ref.path)}</strong><br>Could not resolve this file inside the inferred project root.${referenceRootLabel()}</div>`
-    return
-  }
-  filePreview.innerHTML = '<div class="panel-empty">Loading file…</div>'
-  const file = await window.planAPI.getReferencedFile?.(activePlan, refPath)
-  if (!file || file.truncated) {
-    filePreview.innerHTML = `<div class="panel-empty"><strong>${escapeHtml(refPath)}</strong><br>${file?.truncated ? 'File is too large to preview.' : 'File could not be loaded.'}</div>`
-    return
-  }
-  const lines = file.content.split('\n').slice(0, 420)
-  filePreview.innerHTML = `<div class="file-preview-title">${escapeHtml(refPath)}</div><pre class="code-preview">${lines.map((line, i) =>
-    `<span class="code-row"><span class="code-line-no">${i + 1}</span><span class="code-line">${highlightCodeLine(line)}</span></span>`
-  ).join('')}</pre>`
-}
-
-function highlightCodeLine(line) {
-  let s = escapeHtml(line)
-  s = s.replace(/(\/\/.*$)/, '<span class="code-comment">$1</span>')
-  s = s.replace(/\b(import|export|const|let|var|function|return|if|else|for|while|class|async|await|from)\b/g, '<span class="code-keyword">$1</span>')
-  s = s.replace(/(&quot;.*?&quot;|'.*?'|`.*?`)/g, '<span class="code-string">$1</span>')
-  return s
-}
-
-function splitSectionsForDiff(content) {
-  const body = stripTitle(content).trim()
-  const chunks = body.split(/^(?=## )/m).filter(c => c.trim())
-  if (!chunks.length) return [{ title: 'Plan', content: body }]
-  return chunks.map(chunk => {
-    const m = chunk.match(/^## (.+)$/m)
-    return { title: m ? m[1].trim() : 'Overview', content: chunk.trim() }
-  })
-}
-
-function renderVersionBadges() {
-  const total = snapshots.length + 1
-  const all = [null, ...[...snapshots].reverse()]
-  return all.map((ts, i) => {
-    const vNum = total - i
-    const active = activeSnapshot === ts
-    const label = ts === null ? `v${vNum} Current` : `v${vNum}`
-    return `<button class="version-badge${active ? ' active' : ''}" data-ts="${ts || ''}">${label}</button>`
-  }).join('')
-}
-
-async function renderChangesPanel() {
-  changesToolbar.innerHTML = `
-    <div class="version-badges">${renderVersionBadges()}</div>
-    <div class="diff-mode-toggle">
-      <button class="${semanticMode === 'semantic' ? 'active' : ''}" data-mode="semantic">Semantic</button>
-      <button class="${semanticMode === 'unified' ? 'active' : ''}" data-mode="unified">Unified</button>
-    </div>`
-  changesToolbar.querySelectorAll('.version-badge').forEach(btn => {
-    btn.addEventListener('click', () => switchVersion(btn.dataset.ts ? Number(btn.dataset.ts) : null))
-  })
-  changesToolbar.querySelectorAll('[data-mode]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      semanticMode = btn.dataset.mode
-      renderChangesPanel()
-    })
-  })
-
-  if (activeSnapshot === null) {
-    semanticDiffList.innerHTML = '<div class="panel-empty">Select a previous version to compare it with the current plan.</div>'
-    return
-  }
-  const current = await window.planAPI.getPlanContent(activePlan)
-  const old = await window.planAPI.getSnapshotContent(activePlan, activeSnapshot)
-  if (!current || !old) {
-    semanticDiffList.innerHTML = '<div class="panel-empty">Could not load this comparison.</div>'
-    return
-  }
-  semanticDiffList.innerHTML = semanticMode === 'unified'
-    ? renderUnifiedDiff(old, current)
-    : renderSemanticDiff(old, current)
-}
-
-function renderSemanticDiff(oldContent, newContent) {
-  const oldMap = new Map(splitSectionsForDiff(oldContent).map(s => [s.title, s.content]))
-  const newMap = new Map(splitSectionsForDiff(newContent).map(s => [s.title, s.content]))
-  const titles = [...new Set([...oldMap.keys(), ...newMap.keys()])]
-  const cards = []
-  for (const title of titles) {
-    const oldSec = oldMap.get(title)
-    const newSec = newMap.get(title)
-    if (!oldSec && newSec) cards.push(diffCard('added', title, newSec))
-    else if (oldSec && !newSec) cards.push(diffCard('removed', title, oldSec))
-    else if (oldSec !== newSec) cards.push(diffCard('modified', title, newSec))
-  }
-  return cards.length ? cards.join('') : '<div class="panel-empty">No section-level changes found.</div>'
-}
-
-function diffCard(type, title, content) {
-  const label = type === 'added' ? 'Added' : type === 'removed' ? 'Removed' : 'Modified'
-  return `<section class="semantic-card ${type}">
-    <header><span>${label}</span><strong>${escapeHtml(title)}</strong></header>
-    <div>${marked.parse(content.replace(/^## .+\n?/, '').trim() || content)}</div>
-  </section>`
-}
-
-function renderUnifiedDiff(oldContent, newContent) {
-  const ops = lcsOps(oldContent.split('\n'), newContent.split('\n'))
-  const hunks = buildHunks(ops, 3)
-  if (!hunks.length) return '<div class="panel-empty">No changes between these versions.</div>'
-  return `<div class="panel-unified-diff">${hunks.map(hunk => hunk.map(op => {
-    const prefix = op.type === 'delete' ? '−' : op.type === 'insert' ? '+' : ' '
-    return `<div class="diff-line diff-${op.type}"><span class="diff-gutter">${prefix}</span><span class="diff-text">${escapeHtml(op.value)}</span></div>`
-  }).join('')).join('<div class="diff-separator"></div>')}</div>`
-}
-
-panelToggleBtn.addEventListener('click', () => setPanel(!panelOpen, activePanel))
-contextCodeTab.addEventListener('click', () => setPanel(true, 'code'))
-contextChangesTab.addEventListener('click', () => setPanel(true, 'changes'))
-contextReviewTab?.addEventListener('click', () => setPanel(true, 'review'))
-contextCloseBtn.addEventListener('click', () => setPanel(false))
-
-// ── Copy dropdown ─────────────────────────────────────────────────────────────
-
-copyBtn.addEventListener('click', e => {
-  e.stopPropagation()
-  copyMenu.classList.toggle('hidden')
-})
-
-document.addEventListener('click', () => copyMenu.classList.add('hidden'))
-
-copyMarkdownBtn.addEventListener('click', () => {
-  navigator.clipboard.writeText(activeContent).catch(() => {})
-  copyMenu.classList.add('hidden')
-  showToast('Markdown copied')
-})
-
-copyTextBtn.addEventListener('click', () => {
-  navigator.clipboard.writeText(docContent.innerText).catch(() => {})
-  copyMenu.classList.add('hidden')
-  showToast('Plain text copied')
-})
-
-copyWithCommentsBtn.addEventListener('click', () => {
-  navigator.clipboard.writeText(buildFeedbackMessage()).catch(() => {})
-  copyMenu.classList.add('hidden')
-  showToast(comments.length > 0 ? 'Copied with comments' : 'Markdown copied')
-})
-
-// ── Version history ───────────────────────────────────────────────────────────
-
-function renderVersions() {
-  renderContextPanel()
-}
-
-async function switchVersion(ts) {
-  if (isDiffMode) {
-    isDiffMode = false
-    docContent.classList.remove('hidden')
-    diffPanel.classList.add('hidden')
-    diffPanel.innerHTML = ''
-    diffBtn.textContent = 'Diff'
-  }
-
-  activeSnapshot = ts
-  if (ts === null) {
-    versionBanner.classList.add('hidden')
-    diffBtn.classList.add('hidden')
-  } else {
-    const d = new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-    versionBanner.innerHTML = `Comparing version from ${d} — <a class="version-banner-link">Back to current</a>`
-    versionBanner.classList.remove('hidden')
-    versionBanner.querySelector('.version-banner-link').addEventListener('click', () => switchVersion(null))
-    diffBtn.classList.add('hidden')
-  }
-  renderContextPanel()
-}
-
-// ── Table of contents ─────────────────────────────────────────────────────────
-
-function buildToc() {
-  const headings = [...docContent.querySelectorAll('h1, h2, h3')]
-  tocList.innerHTML = ''
-
-  if (headings.length < 2) { tocPanel.classList.add('hidden'); return }
-  tocPanel.classList.remove('hidden')
-
-  headings.forEach((h, i) => {
-    if (!h.id) {
-      h.id = 'h-' + h.textContent.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/, '') + '-' + i
-    }
-    const li = document.createElement('li')
-    li.className = `toc-item toc-${h.tagName.toLowerCase()}`
-    li.dataset.hid = h.id
-    li.textContent = h.textContent.trim()
-    li.title = h.textContent.trim()
-    li.addEventListener('click', () => h.scrollIntoView({ behavior: 'smooth', block: 'start' }))
-    tocList.appendChild(li)
-  })
-
-  updateTocActive()
-}
-
-function updateTocActive() {
-  const headings = [...docContent.querySelectorAll('h1[id], h2[id], h3[id]')]
-  if (!headings.length) return
-  const containerTop = viewerBody.getBoundingClientRect().top
-  const atBottom = viewerBody.scrollTop + viewerBody.clientHeight >= viewerBody.scrollHeight - 8
-  let active = headings[0]
-  if (atBottom) {
-    active = headings[headings.length - 1]
-  } else {
-    for (const h of headings) {
-      if (h.getBoundingClientRect().top - containerTop <= 72) active = h
-    }
-  }
-  tocList.querySelectorAll('.toc-item').forEach(li =>
-    li.classList.toggle('toc-active', li.dataset.hid === active.id)
-  )
-}
-
-viewerBody.addEventListener('scroll', updateTocActive)
-
-docContent.addEventListener('click', e => {
-  if (e.target.classList.contains('plan-context-toggle')) {
-    const prev = viewerBody.scrollTop
-    triggerExpanded = !triggerExpanded
-    applyCommentHighlights()
-    viewerBody.scrollTop = prev
-  }
-})
-
-// ── Comment tooltip ───────────────────────────────────────────────────────────
-
-let tooltipTimer = null
-let activeTooltipId = null
-
-function showTooltip(mark, comment) {
-  clearTimeout(tooltipTimer)
-  activeTooltipId = comment.id
-  const label = annotationTypeLabel(comment.type || 'comment')
-  tooltipNote.textContent = comment.author
-    ? `${label} · ${comment.author}: ${comment.note}`
-    : `${label}: ${comment.note}`
-  tooltipDelete.dataset.id = comment.id
-
-  const rect = mark.getBoundingClientRect()
-  const tipW = 240
-  let left = rect.left + rect.width / 2 - tipW / 2
-  if (left < 8) left = 8
-  if (left + tipW > window.innerWidth - 8) left = window.innerWidth - tipW - 8
-
-  commentTooltip.style.left = `${left}px`
-  commentTooltip.style.top  = `${rect.top - 8}px` // will use transform to go above
-  commentTooltip.classList.remove('hidden')
-}
-
-function hideTooltip(delay = 0) {
-  clearTimeout(tooltipTimer)
-  tooltipTimer = setTimeout(() => {
-    commentTooltip.classList.add('hidden')
-    activeTooltipId = null
-  }, delay)
-}
-
-commentTooltip.addEventListener('mouseenter', () => clearTimeout(tooltipTimer))
-commentTooltip.addEventListener('mouseleave', () => hideTooltip(100))
-
-tooltipDelete.addEventListener('click', async () => {
-  const id = tooltipDelete.dataset.id
-  comments = comments.filter(c => c.id !== id)
-  await window.planAPI.saveComments(activePlan, comments)
-  hideTooltip()
-  applyCommentHighlights()
-})
-
-// ── Comments ──────────────────────────────────────────────────────────────────
-
-document.addEventListener('mouseup', e => {
-  if (commentBubble.contains(e.target) || e.target === commentAddBtn) return
-
-  // Clicked outside the bubble — always dismiss it
-  if (!commentBubble.classList.contains('hidden')) {
-    dismissCommentUI()
-    return
-  }
-
-  if (!docContent.contains(e.target)) {
-    dismissCommentUI()
-    return
-  }
-
-  const sel = window.getSelection()
-  if (!sel || sel.isCollapsed || sel.toString().trim().length < 2) {
-    commentAddBtn.classList.add('hidden')
-    return
-  }
-
-  const rect   = sel.getRangeAt(0).getBoundingClientRect()
-  pendingQuote = sel.toString().trim()
-
-  commentAddBtn.style.top  = `${rect.bottom + 8}px`
-  commentAddBtn.style.left = `${rect.left + rect.width / 2}px`
-  commentAddBtn.classList.remove('hidden')
-})
-
-commentAddBtn.addEventListener('click', e => {
-  e.stopPropagation()
-  const rect = commentAddBtn.getBoundingClientRect()
-  let left = rect.left - 100
-  if (left < 8) left = 8
-  if (left + 280 > window.innerWidth - 8) left = window.innerWidth - 288
-
-  commentBubble.style.top  = `${rect.bottom + 6}px`
-  commentBubble.style.left = `${left}px`
-  commentBubble.classList.remove('hidden')
-  commentAddBtn.classList.add('hidden')
-  if (annotationType) annotationType.value = 'comment'
-  commentInput.value = ''
-  commentInput.focus()
-})
-
-commentCancelBtn.addEventListener('click', dismissCommentUI)
-commentSaveBtn.addEventListener('click', saveComment)
-
-commentInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) saveComment()
-  if (e.key === 'Escape') dismissCommentUI()
-})
-
-function navigatePlan(dir) {
-  if (!activePlan) return
-  const source = openTabs.length ? openTabs.map(planByFilename).filter(Boolean) : allPlans
-  const idx  = source.findIndex(p => p.filename === activePlan)
-  const next = source[idx + dir]
-  if (next) openPlan(next)
-}
-
-// Global keyboard shortcuts
 document.addEventListener('keydown', e => {
-  const inInput = document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA'
-
-  // Escape — dismiss palette → exit step mode → dismiss comment UI
-  if (e.key === 'Escape') {
-    if (!palette.classList.contains('hidden')) { closePalette(); return }
-    if (isStepMode) { exitStepMode(); return }
-    dismissCommentUI()
-    return
-  }
-
-  // ⌘K — open command palette
-  if (e.metaKey && e.key === 'k') {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
     openPalette()
-    return
   }
-
-  // ⌘F — use the picker as primary search
-  if (e.metaKey && e.key === 'f') {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
     e.preventDefault()
-    openPalette()
-    return
+    saveNow().then(() => setToast('Saved'))
   }
-
-  // ⌘[ / ⌘] — prev / next plan
-  if (e.metaKey && e.key === '[') { e.preventDefault(); navigatePlan(-1); return }
-  if (e.metaKey && e.key === ']') { e.preventDefault(); navigatePlan(+1); return }
-
-  // Arrow keys — step navigation (in step mode) or plan navigation (otherwise)
-  if (!inInput) {
-    if (isStepMode) {
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-        e.preventDefault()
-        if (stepIndex < stepSections.length - 1) { stepIndex++; renderStep() }
-        else exitStepMode()
-        return
-      }
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-        e.preventDefault()
-        if (stepIndex > 0) { stepIndex--; renderStep() }
-        return
-      }
-    }
-  }
+  if (e.key === 'Escape' && !palette.classList.contains('hidden')) closePalette()
 })
 
-// ⌘↵ on selected text opens comment bubble directly
-document.addEventListener('keydown', e => {
-  if (!(e.metaKey && e.key === 'Enter')) return
-  if (!pendingQuote) return
-  e.preventDefault()
+async function init() {
+  const prefs = getPrefs()
+  setTheme(prefs.theme || 'dark')
+  await loadDocs()
+  setPreviewTab('document')
+}
 
-  const sel = window.getSelection()
-  const rect = sel && !sel.isCollapsed
-    ? sel.getRangeAt(0).getBoundingClientRect()
-    : commentAddBtn.getBoundingClientRect()
-
-  let left = rect.left + rect.width / 2 - 140
-  if (left < 8) left = 8
-  if (left + 280 > window.innerWidth - 8) left = window.innerWidth - 288
-
-  commentBubble.style.top  = `${rect.bottom + 8}px`
-  commentBubble.style.left = `${left}px`
-  commentBubble.classList.remove('hidden')
-  commentAddBtn.classList.add('hidden')
-  if (annotationType) annotationType.value = 'comment'
-  commentInput.value = ''
-  commentInput.focus()
+init().catch(err => {
+  console.error(err)
+  setToast('Could not load design docs')
 })
-
-function dismissCommentUI() {
-  commentBubble.classList.add('hidden')
-  commentAddBtn.classList.add('hidden')
-  pendingQuote = ''
-}
-
-async function saveComment() {
-  const note = commentInput.value.trim()
-  if (!note || !pendingQuote) { dismissCommentUI(); return }
-
-  let author = null
-  if (window.WEB_MODE) {
-    author = window.planAPI.getAuthorName?.() || ''
-    if (!author) {
-      author = prompt('Your name (shown with your comments):') || 'Anonymous'
-      window.planAPI.setAuthorName?.(author)
-    }
-  }
-
-  const type = annotationType?.value || 'comment'
-  const comment = { id: uid(), type, quote: pendingQuote.substring(0, 300), note, timestamp: new Date().toISOString() }
-  if (author) comment.author = author
-  comments.push(comment)
-  await window.planAPI.saveComments(activePlan, comments)
-  dismissCommentUI()
-  applyCommentHighlights()
-  if (activePanel === 'review') renderReviewPanel()
-  showToast('Comment added')
-}
-
-function annotationClass(type) {
-  return `annotation-${String(type || 'comment').replace(/[^a-z_]/g, '')}`
-}
-
-function highlightQuote(root, text, id, type = 'comment') {
-  if (!text) return
-
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode: n => n.parentElement.closest('.plan-context, mark')
-      ? NodeFilter.FILTER_REJECT
-      : NodeFilter.FILTER_ACCEPT
-  })
-
-  const nodes = []
-  let combined = ''
-  let node
-  while ((node = walker.nextNode())) {
-    nodes.push({ node, start: combined.length })
-    combined += node.textContent
-  }
-
-  const idx = combined.indexOf(text)
-  if (idx === -1) return
-  const end = idx + text.length
-
-  // Collect every text-node segment that falls within [idx, end)
-  const segs = []
-  for (const { node: n, start } of nodes) {
-    const nodeEnd = start + n.textContent.length
-    if (nodeEnd <= idx || start >= end) continue
-    segs.push({
-      node: n,
-      from: Math.max(idx, start) - start,
-      to:   Math.min(end, nodeEnd) - start,
-    })
-  }
-  if (!segs.length) return
-
-  // Wrap each segment in its own <mark> (reverse so earlier offsets stay valid)
-  for (let i = segs.length - 1; i >= 0; i--) {
-    const { node: n, from, to } = segs[i]
-    const range = document.createRange()
-    range.setStart(n, from)
-    range.setEnd(n, to)
-    const mark = document.createElement('mark')
-    mark.className = `comment-mark ${annotationClass(type)}`
-    mark.dataset.id = id
-    try { range.surroundContents(mark) } catch (_) {}
-  }
-}
-
-function applyCommentHighlights() {
-  docContent.innerHTML = triggerBlock() + marked.parse(stripTitle(activeContent))
-
-  for (const c of comments) {
-    highlightQuote(docContent, c.quote.substring(0, 200), c.id, c.type || 'comment')
-  }
-
-  docContent.querySelectorAll('.comment-mark').forEach(mark => {
-    mark.addEventListener('mouseenter', () => {
-      const comment = comments.find(c => c.id === mark.dataset.id)
-      if (comment) showTooltip(mark, comment)
-    })
-    mark.addEventListener('mouseleave', () => hideTooltip(100))
-  })
-
-  buildToc()
-}
-
-liveDismissBtn.addEventListener('click', async () => {
-  currentReview = await window.planAPI.saveReview?.(activePlan, buildReviewPayload('dismissed')).catch(() => null) || null
-  await window.planAPI.dismissLive(activePlan)
-  const plan = allPlans.find(p => p.filename === activePlan)
-  if (plan) {
-    plan.live = false
-    plan.status = 'reviewed'
-    plan.review = currentReview
-  }
-  liveBadge.classList.add('hidden')
-  liveBar.classList.add('hidden')
-  approveBtn?.classList.add('hidden')
-  sendBtn.classList.add('hidden')
-  renderTabs()
-  renderReviewBanner()
-})
-
-// ── Review decisions ──────────────────────────────────────────────────────────
-
-async function completeLiveReview(plan, decision, toastMessage) {
-  currentReview = await window.planAPI.saveReview?.(activePlan, buildReviewPayload(decision)).catch(() => null) || null
-  await window.planAPI.dismissLive(activePlan)
-  if (plan) {
-    plan.live = false
-    plan.status = decision === 'approved' ? 'approved' : 'changes_requested'
-    plan.review = currentReview
-  }
-  liveBadge.classList.add('hidden')
-  liveBar.classList.add('hidden')
-  approveBtn?.classList.add('hidden')
-  sendBtn.classList.add('hidden')
-  renderTabs()
-  renderReviewBanner()
-  showToast(toastMessage, 4000)
-}
-
-approveBtn?.addEventListener('click', async () => {
-  const plan = allPlans.find(p => p.filename === activePlan)
-  navigator.clipboard.writeText(activeContent + '\n\n---\n\nApproved. Please proceed with the implementation.').catch(() => {})
-  await completeLiveReview(plan, 'approved', 'Approval copied — paste it in Claude Code')
-})
-
-sendBtn.addEventListener('click', async () => {
-  const plan = allPlans.find(p => p.filename === activePlan)
-  if (!comments.length) {
-    showToast('Add an annotation before requesting changes', 3000)
-    return
-  }
-  navigator.clipboard.writeText(buildFeedbackMessage()).catch(() => {})
-  await completeLiveReview(plan, 'changes_requested', 'Change request copied — paste it in Claude Code')
-})
-
-// ── Live updates ──────────────────────────────────────────────────────────────
-
-async function loadPlans() {
-  allPlans = await window.planAPI.getPlans()
-  indexPalettePlans()
-  const prefs = await window.planAPI.getPrefs?.().catch(() => null)
-  openTabs = Array.isArray(prefs?.openTabs) ? prefs.openTabs : []
-  normalizeOpenTabs()
-  renderTabs()
-  const target = prefs?.lastPlan || await window.planAPI.getLastPlan()
-  if (target) {
-    const plan = planByFilename(target)
-    if (plan) {
-      ensureOpenTab(plan.filename)
-      await openPlan(plan, { fromTab: true })
-    }
-  }
-}
-
-function mergePlanUpdate(previous, next) {
-  if (!previous) return next || {}
-  return {
-    ...previous,
-    ...next,
-    live: previous.live || next?.live,
-    comments: previous.comments || next?.comments,
-    review: previous.review || next?.review,
-  }
-}
-
-function schedulePlansRefresh(data = {}) {
-  pendingPlanUpdate = mergePlanUpdate(pendingPlanUpdate, data)
-  clearTimeout(plansRefreshTimer)
-  plansRefreshTimer = setTimeout(() => {
-    refreshPlansFromUpdate().catch(() => {})
-  }, 180)
-}
-
-async function refreshPlansFromUpdate() {
-  if (refreshInFlight) {
-    schedulePlansRefresh(pendingPlanUpdate || {})
-    return
-  }
-
-  refreshInFlight = true
-  const data = pendingPlanUpdate || {}
-  pendingPlanUpdate = null
-  try {
-    const prev = activePlan
-    allPlans = await window.planAPI.getPlans()
-    indexPalettePlans()
-    renderTabs()
-
-    const newLive = data?.live
-    if (newLive && newLive !== prev) {
-      const plan = planByFilename(newLive)
-      if (plan) {
-        ensureOpenTab(plan.filename)
-        openPlan(plan, { fromTab: true })
-      }
-    } else if (newLive === prev && prev) {
-      const content = await window.planAPI.getPlanContent(activePlan)
-      if (content) {
-        activeContent = content
-        snapshots = await window.planAPI.getSnapshots(activePlan)
-        await loadPlanReferences()
-        renderContextPanel()
-        if (isStepMode) exitStepMode()
-        else applyCommentHighlights()
-      }
-    } else if (data?.comments === activePlan) {
-      // A browser client saved comments — reload them
-      const saved = await window.planAPI.loadComments(activePlan)
-      comments = saved || []
-      applyCommentHighlights()
-    } else if (data?.review === activePlan) {
-      currentReview = await window.planAPI.loadReview?.(activePlan).catch(() => null) || null
-      renderReviewBanner()
-    }
-  } finally {
-    refreshInFlight = false
-
-    if (pendingPlanUpdate) {
-      schedulePlansRefresh(pendingPlanUpdate)
-    }
-  }
-}
-
-window.planAPI.onPlanUpdated(data => schedulePlansRefresh(data))
-
-loadPlans()

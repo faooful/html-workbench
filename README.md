@@ -1,17 +1,18 @@
-# Plan Viewer
+# Plan Memory Review Inbox
 
-Plan Viewer is a local Electron app for browsing, reviewing, annotating, and sharing AI-generated implementation plans written by Claude. It watches Claude's plan directory, keeps a local archive of Markdown plans, marks new or changed plans as live, and gives you a focused review surface before sending approval or revision feedback back to Claude.
+Plan Memory Review Inbox is a local-first Electron app for reviewing AI-generated implementation plans before they touch your codebase. It captures plans from Claude and Codex, keeps a durable local archive, tracks review decisions over time, and gives you an audit trail of what agents proposed, what changed, what was approved, and why.
 
-The app also starts a small local HTTP server so plans can be opened from a browser on the same network. Browser mode is read-only for plan content, but collaborators can add comments that sync back to the desktop app.
+The app also starts a small local HTTP server so plans can be opened from a browser on the same network. Browser mode is read/comment-oriented; host-only review decisions stay in the desktop app.
 
 ## What It Does
 
-- Syncs Markdown plans from `~/.claude/plans/` into the local `plans/` archive.
-- Shows live plans that are awaiting review or approval.
-- Groups plans by source repository when metadata can be inferred from Claude project history.
+- Syncs Claude Markdown plans from `~/.claude/plans/` and Codex proposed plans from `~/.codex/sessions/` into the local `plans/` archive.
+- Shows live plans that are awaiting review or approval, with review-first filters in the command palette.
+- Groups plans by source repository when metadata can be inferred from Claude/Codex history.
 - Renders Markdown plans in a reader-friendly interface.
-- Supports comments on selected text, stored beside each plan as JSON.
-- Builds a feedback message from comments that can be pasted back into Claude Code.
+- Supports typed annotations on selected text, stored beside each plan as JSON.
+- Tracks checklist state, review decisions, and a per-plan timeline in local sidecar files.
+- Builds approval or grouped change-request messages that can be pasted back into an agent.
 - Keeps snapshots when synced plans change, so earlier versions can be reviewed.
 - Shows line-based diffs between a historical snapshot and the current version.
 - Provides a step-through mode that splits plans by `##` sections.
@@ -60,13 +61,19 @@ Install dependencies:
 npm install
 ```
 
-Claude Code should be configured normally on the same machine. Plan Viewer expects Claude-generated plans to appear in:
+Claude Code and/or Codex should be configured normally on the same machine. Claude-generated plans are synced from:
 
 ```text
 ~/.claude/plans/
 ```
 
-If that directory does not exist yet, the app will still launch, but there will be no plans to sync until Claude creates some.
+Codex proposed plans are extracted from:
+
+```text
+~/.codex/sessions/**/*.jsonl
+```
+
+If neither source exists yet, the app will still launch with onboarding instructions.
 
 ## Running the App
 
@@ -80,7 +87,7 @@ On launch, the app:
 
 1. Ensures the local `plans/` and `plans/.snapshots/` directories exist.
 2. Loads remembered live-plan state.
-3. Copies any newer Markdown plans from `~/.claude/plans/`.
+3. Copies any newer Claude plans and imports any new Codex proposed plans.
 4. Starts the browser sharing server on port `3847`.
 5. Opens the Electron window.
 
@@ -104,29 +111,38 @@ Available HTTP endpoints include:
 - `GET /api/snapshots/:filename/:timestamp`
 - `GET /api/events`
 
-Browser clients receive updates over server-sent events. Plan content is read-only in browser mode, but comments can be added and are broadcast back to connected clients and the Electron app.
+Browser clients receive updates over server-sent events. Plan content is read-only in browser mode, comments can be added, and review decisions remain host-only.
 
-Important: the sharing server is unauthenticated and listens on `0.0.0.0`. Only run it on networks where exposing local plan content is acceptable.
+Important: the sharing server is unauthenticated and listens on `0.0.0.0`. Only run it on trusted networks where exposing local plan content is acceptable.
 
 ## Data Flow
 
 ### Plan Sync
 
-1. Chokidar watches `~/.claude/plans/`.
-2. When a Markdown plan is added or changed, the app copies it into `plans/`.
+1. Chokidar watches `~/.claude/plans/` and `~/.codex/sessions/`.
+2. When a Claude plan is added/changed or a Codex proposed plan is found, the app copies/imports it into `plans/`.
 3. If the local archive already has different content, the old content is saved as a snapshot first.
 4. The plan is marked live and the app broadcasts the update through IPC and SSE.
 5. The renderer refreshes its plan list and opens newly live plans automatically.
 
 ### Comments
 
-Comments are stored as sibling JSON files beside the archived plan:
+Annotations are stored as sibling JSON files beside the archived plan:
 
 ```text
 plans/example-plan.comments.json
 ```
 
-Each comment records the selected quote, note text, timestamp, and optional browser-mode author name. Comment highlights are reapplied by finding the quoted text in the rendered Markdown.
+Each annotation records the selected quote, note text, type, timestamp, and optional browser-mode author name. Highlights are reapplied by finding the quoted text in the rendered Markdown.
+
+Review decisions and plan memory are stored beside the archived plan:
+
+```text
+plans/example-plan.review.json
+plans/example-plan.timeline.json
+```
+
+Review files store checklist state, final decisions, and annotation snapshots. Timeline files record created, revised, annotated, checklist-updated, approved, changes-requested, and dismissed events.
 
 ### Snapshots
 
@@ -147,6 +163,8 @@ These files are generated locally and ignored by Git:
 .prefs.json               # Last-opened plan and other local preferences
 plans/*.md                # Synced plan archive
 plans/*.comments.json     # Per-plan comments
+plans/*.review.json       # Per-plan review decisions and checklist state
+plans/*.timeline.json     # Per-plan memory timeline
 plans/.snapshots/         # Historical plan versions
 ```
 
@@ -210,10 +228,9 @@ The app is mostly a single-file vanilla renderer right now. For larger changes, 
 
 ## Known Gaps
 
-- Search does not index full plan body content.
+- Search does not yet index full plan body content.
 - Comment anchoring is quote-based and can fail if plan text changes.
-- Trigger extraction depends on Claude JSONL history shape and can be fragile.
+- Trigger/project extraction depends on Claude and Codex JSONL history shapes and can be fragile.
 - The browser sharing server has no authentication.
 - Some CSS is stale or needs accessibility polish, especially focus states.
 - There is no dark mode.
-

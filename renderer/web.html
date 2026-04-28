@@ -27,7 +27,16 @@
   <div id="main-area">
 
     <div id="empty-state">
-      <p>Select a plan to read it</p>
+      <div class="empty-card">
+        <h2>Plan Memory Review Inbox</h2>
+        <p>Review AI implementation plans, annotations, and decisions from a local-first archive.</p>
+        <div class="empty-steps">
+          <span>Open a shared plan</span>
+          <span>Add comments</span>
+          <span>Review decisions on the host app</span>
+        </div>
+        <p class="empty-note">This browser view is read/comment-oriented. Review decisions are host-only.</p>
+      </div>
     </div>
 
     <div id="plan-header" class="hidden">
@@ -59,9 +68,10 @@
     <div id="review-banner" class="hidden"></div>
 
     <div id="live-bar" class="hidden">
-      <span class="live-bar-text">This plan is awaiting approval — select text and press <kbd>⌘↵</kbd> to add a comment.</span>
+      <span class="live-bar-text">This plan is awaiting host approval — select text and press <kbd>⌘↵</kbd> to add a comment.</span>
       <button id="live-dismiss-btn">Dismiss</button>
     </div>
+    <div id="readiness-strip" class="hidden"></div>
 
     <div id="content-shell">
       <div id="content-main">
