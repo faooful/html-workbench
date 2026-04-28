@@ -14,6 +14,7 @@ let sharingServerReady = false
 const CLAUDE_PLANS_DIR = path.join(os.homedir(), '.claude', 'plans')  // source
 const CODEX_SESSIONS_DIR = path.join(os.homedir(), '.codex', 'sessions')
 const VIEWER_PLANS_DIR = path.join(__dirname, 'plans')                  // local archive
+const DESIGN_DOCS_DIR  = path.join(__dirname, 'design-docs')
 const SNAPSHOTS_DIR    = path.join(VIEWER_PLANS_DIR, '.snapshots')      // version history
 const PROJECTS_DIR     = path.join(os.homedir(), '.claude', 'projects')
 const CLAUDE_TASKS_DIR  = path.join(os.homedir(), '.claude', 'tasks')
@@ -21,6 +22,73 @@ const LIVE_STATE_FILE  = path.join(__dirname, '.live-plans.json')
 const PREFS_FILE       = path.join(__dirname, '.prefs.json')
 const SOURCES_FILE     = path.join(VIEWER_PLANS_DIR, '.sources.json')
 const CODEX_IMPORT_VERSION = 2
+
+const DEFAULT_DESIGN_DOC = `# Product Design Language
+
+## Purpose
+
+This document teaches coding agents how to apply this product's design language consistently.
+
+## Design Principles
+
+- Keep the interface calm and useful before decorative.
+- Prefer clear hierarchy, restrained borders, and readable density.
+- Use status only when it helps the user decide what to do next.
+
+## Visual Language
+
+- Surfaces are light, quiet, and local-first.
+- Typography should prioritize legibility over marketing polish.
+- Controls should feel native to macOS without copying system UI exactly.
+
+## Tokens
+
+- Accent: blue for primary actions and active navigation.
+- Success: green for completed or approved states.
+- Warning: amber only for real blockers or missing guidance.
+- Radius: small for controls, medium for panels, large only for app-level surfaces.
+
+## Components And Patterns
+
+### Document Surface
+
+Use a focused markdown column with generous margins and minimal chrome.
+
+States:
+- Empty
+- Editing
+- Previewing
+- Export-ready
+
+Do:
+- Keep the document readable without the side panels.
+- Let secondary context live in the right panel.
+
+Don't:
+- Stack multiple page-wide banners.
+- Repeat the same status in three places.
+
+## Accessibility
+
+- Every icon-only control needs an accessible label.
+- Interactive rows need visible focus states.
+- Do not rely on color alone for readiness or warnings.
+
+## Agent Implementation Rules
+
+- Before implementing UI, read this file and follow the component guidance.
+- If a component or state is missing, ask for clarification instead of inventing a new pattern.
+- Preserve spacing, typography, and interaction conventions already documented here.
+
+## Implementation Checklist
+
+- [ ] Product context is clear
+- [ ] Tokens are documented
+- [ ] Components include states
+- [ ] Do/don't examples are present
+- [ ] Accessibility expectations are explicit
+- [ ] Agent rules are actionable
+`
 
 let mainWindow
 let planMetaCache = null
@@ -85,10 +153,12 @@ function startSharingServer() {
 
   const staticMap = {
     '/':              ['web.html',      'text/html; charset=utf-8'],
+    '/__desktop-test':['index.html',    'text/html; charset=utf-8'],
     '/styles.css':    ['styles.css',    'text/css'],
     '/marked.min.js': ['marked.min.js', 'text/javascript'],
     '/renderer.js':   ['renderer.js',   'text/javascript'],
     '/web-api.js':    ['web-api.js',    'text/javascript'],
+    '/test-api.js':   ['test-api.js',   'text/javascript'],
   }
 
   const server = http.createServer((req, res) => {
@@ -643,6 +713,180 @@ function extractTitle(content, filename) {
     .split('-')
     .map(w => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ')
+}
+
+function designSlug(input) {
+  return String(input || 'design')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64) || 'design'
+}
+
+function designDocPath(filename) {
+  const clean = String(filename || '').replace(/^\/+/, '')
+  return path.resolve(DESIGN_DOCS_DIR, clean)
+}
+
+function ensureDefaultDesignDoc() {
+  fs.mkdirSync(DESIGN_DOCS_DIR, { recursive: true })
+  const projectDir = path.join(DESIGN_DOCS_DIR, 'plan-viewer')
+  const docPath = path.join(projectDir, 'design.md')
+  if (fs.existsSync(docPath)) return
+  fs.mkdirSync(projectDir, { recursive: true })
+  fs.writeFileSync(docPath, DEFAULT_DESIGN_DOC, 'utf8')
+  fs.writeFileSync(path.join(projectDir, 'design.meta.json'), JSON.stringify({
+    project: 'plan-viewer',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    source: 'starter',
+  }, null, 2), 'utf8')
+}
+
+function designReadiness(content) {
+  const checks = [
+    ['purpose', /^##\s+(Purpose|Context|Product Context)/im],
+    ['principles', /^##\s+Design Principles/im],
+    ['visualLanguage', /^##\s+Visual Language/im],
+    ['tokens', /^##\s+Tokens/im],
+    ['components', /^##\s+(Components|Components And Patterns|Patterns)/im],
+    ['examples', /\b(Do:|Don't:|Do not:|Anti-patterns?)\b/im],
+    ['accessibility', /^##\s+Accessibility/im],
+    ['agentRules', /^##\s+Agent Implementation Rules/im],
+  ].map(([id, pattern]) => ({ id, passed: pattern.test(content) }))
+  const passed = checks.filter(c => c.passed).length
+  return {
+    passed,
+    total: checks.length,
+    state: passed >= checks.length - 1 ? 'ready' : 'draft',
+    checks,
+  }
+}
+
+function getDesignDocs() {
+  if (!fs.existsSync(DESIGN_DOCS_DIR)) return []
+  const docs = []
+  const walk = (dir, prefix = '') => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith('.')) continue
+      const rel = path.join(prefix, entry.name)
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) walk(full, rel)
+      else if (entry.isFile() && entry.name.endsWith('.md')) {
+        const stat = fs.statSync(full)
+        const content = fs.readFileSync(full, 'utf8')
+        const project = prefix.split(path.sep).filter(Boolean)[0] || 'Design docs'
+        const readiness = designReadiness(content)
+        docs.push({
+          filename: rel,
+          kind: 'design-doc',
+          title: extractTitle(content, entry.name),
+          repo: project,
+          project,
+          modified: stat.mtime.toISOString(),
+          created: stat.birthtime?.toISOString?.() || stat.mtime.toISOString(),
+          live: false,
+          source: 'design-doc',
+          status: readiness.state === 'ready' ? 'ready' : 'draft',
+          readiness,
+          versionCount: 0,
+          trigger: null,
+          summary: content
+            .replace(/^#.+$/gm, '')
+            .replace(/[*_`>#\[\]()]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .substring(0, 500),
+        })
+      }
+    }
+  }
+  walk(DESIGN_DOCS_DIR)
+  return docs.sort((a, b) => new Date(b.modified) - new Date(a.modified))
+}
+
+function getDesignDocContent(filename) {
+  const filepath = designDocPath(filename)
+  if (!filepath.startsWith(path.resolve(DESIGN_DOCS_DIR) + path.sep) || !fs.existsSync(filepath)) return null
+  return fs.readFileSync(filepath, 'utf8')
+}
+
+function saveDesignDoc(filename, content) {
+  const filepath = designDocPath(filename || `local/${designSlug(extractTitle(content, 'design.md'))}.md`)
+  if (!filepath.startsWith(path.resolve(DESIGN_DOCS_DIR) + path.sep)) return null
+  fs.mkdirSync(path.dirname(filepath), { recursive: true })
+  fs.writeFileSync(filepath, content, 'utf8')
+  return path.relative(DESIGN_DOCS_DIR, filepath)
+}
+
+function createDesignDoc(project = 'local', title = 'Untitled design') {
+  const cleanProject = designSlug(project || 'local')
+  const cleanTitle = designSlug(title || 'design')
+  const dir = path.resolve(DESIGN_DOCS_DIR, cleanProject)
+  if (!dir.startsWith(path.resolve(DESIGN_DOCS_DIR) + path.sep)) return null
+  fs.mkdirSync(dir, { recursive: true })
+
+  let filename = path.join(cleanProject, `${cleanTitle}.md`)
+  let filepath = designDocPath(filename)
+  let i = 2
+  while (fs.existsSync(filepath)) {
+    filename = path.join(cleanProject, `${cleanTitle}-${i}.md`)
+    filepath = designDocPath(filename)
+    i++
+  }
+
+  const content = `# ${title || 'Untitled design'}
+
+## Purpose
+
+Describe what this design system or feature should help an agent build.
+
+## Design Principles
+
+- Keep the interface calm and useful.
+- Prefer clear hierarchy over decoration.
+
+## Tokens
+
+- Accent: #5E6DD6
+- Background: #17191F
+- Text: #F2F4F8
+- Radius: 8px
+
+## Components
+
+### Button
+
+Variants: Primary, Secondary, Ghost
+Sizes: Small, Medium, Large
+States: Default, Hover, Disabled
+
+## Agent Implementation Rules
+
+- Read this file before changing UI.
+- Reuse documented tokens and component patterns.
+`
+  fs.writeFileSync(filepath, content, 'utf8')
+  return path.relative(DESIGN_DOCS_DIR, filepath)
+}
+
+function renameDesignDoc(filename, nextFilename) {
+  const from = designDocPath(filename)
+  const cleanNext = String(nextFilename || '').replace(/^\/+/, '')
+  const to = designDocPath(cleanNext.endsWith('.md') ? cleanNext : `${cleanNext}.md`)
+  const root = path.resolve(DESIGN_DOCS_DIR) + path.sep
+  if (!from.startsWith(root) || !to.startsWith(root) || !fs.existsSync(from)) return null
+  if (fs.existsSync(to)) return null
+  fs.mkdirSync(path.dirname(to), { recursive: true })
+  fs.renameSync(from, to)
+  return path.relative(DESIGN_DOCS_DIR, to)
+}
+
+function deleteDesignDoc(filename) {
+  const filepath = designDocPath(filename)
+  if (!filepath.startsWith(path.resolve(DESIGN_DOCS_DIR) + path.sep) || !fs.existsSync(filepath)) return false
+  fs.rmSync(filepath)
+  return true
 }
 
 function decodeProjectFolder(folder) {
@@ -1205,6 +1449,12 @@ function createWindow() {
 // ── IPC handlers ──────────────────────────────────────────────────────────────
 
 ipcMain.handle('get-plans', () => getPlans())
+ipcMain.handle('get-design-docs', () => getDesignDocs())
+ipcMain.handle('get-design-doc-content', (_, filename) => getDesignDocContent(filename))
+ipcMain.handle('save-design-doc', (_, filename, content) => saveDesignDoc(filename, content))
+ipcMain.handle('create-design-doc', (_, project, title) => createDesignDoc(project, title))
+ipcMain.handle('rename-design-doc', (_, filename, nextFilename) => renameDesignDoc(filename, nextFilename))
+ipcMain.handle('delete-design-doc', (_, filename) => deleteDesignDoc(filename))
 
 ipcMain.handle('get-plan-content', (_, filename) => {
   return getPlanContent(filename)
@@ -1327,7 +1577,9 @@ ipcMain.handle('get-referenced-file', (_, filename, refPath) => getReferencedFil
 
 app.whenReady().then(() => {
   fs.mkdirSync(VIEWER_PLANS_DIR, { recursive: true })
+  fs.mkdirSync(DESIGN_DOCS_DIR,  { recursive: true })
   fs.mkdirSync(SNAPSHOTS_DIR,    { recursive: true })
+  ensureDefaultDesignDoc()
   loadLiveState()
   syncPlans()   // copy any plans added while app was closed
   startSharingServer()

@@ -2,6 +2,12 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('planAPI', {
   getPlans:       ()                      => ipcRenderer.invoke('get-plans'),
+  getDesignDocs:  ()                      => ipcRenderer.invoke('get-design-docs'),
+  getDesignDocContent: (filename)         => ipcRenderer.invoke('get-design-doc-content', filename),
+  saveDesignDoc:  (filename, content)     => ipcRenderer.invoke('save-design-doc', filename, content),
+  createDesignDoc:(project, title)         => ipcRenderer.invoke('create-design-doc', project, title),
+  renameDesignDoc:(filename, nextFilename) => ipcRenderer.invoke('rename-design-doc', filename, nextFilename),
+  deleteDesignDoc:(filename)               => ipcRenderer.invoke('delete-design-doc', filename),
   getPlanContent: (filename)              => ipcRenderer.invoke('get-plan-content', filename),
   savePlan:       (filename, content)     => ipcRenderer.invoke('save-plan', filename, content),
   dismissLive:    (filename)              => ipcRenderer.invoke('dismiss-live', filename),
