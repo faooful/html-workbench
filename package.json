@@ -13,6 +13,9 @@
   "license": "ISC",
   "description": "Local-first design.md workspace and archive for AI-agent implementation guidance.",
   "dependencies": {
+    "@fontsource-variable/geist": "^5.2.8",
+    "@fontsource-variable/geist-mono": "^5.2.7",
+    "@google/design.md": "^0.1.1",
     "chokidar": "^5.0.0",
     "electron": "^41.3.0"
   },

@@ -4,64 +4,70 @@
 
   const now = new Date().toISOString()
   const store = new Map()
-  store.set('plan-viewer/design.md', `# Product Design Language
+  store.set('plan-viewer/design.md', `---
+version: alpha
+name: Product Design Language
+description: Local design contract for implementation agents.
+colors:
+  primary: "#5E6DD6"
+  secondary: "#8B949E"
+  neutral: "#17191F"
+  surface: "#20232B"
+  on-surface: "#F2F4F8"
+typography:
+  headline-md:
+    fontFamily: Geist
+    fontSize: 28px
+    fontWeight: 650
+    lineHeight: 1.12
+  body-md:
+    fontFamily: Geist
+    fontSize: 15px
+    fontWeight: 400
+    lineHeight: 1.6
+rounded:
+  sm: 6px
+  md: 10px
+spacing:
+  sm: 8px
+  md: 16px
+components:
+  button-primary:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.on-surface}"
+    typography: "{typography.body-md}"
+    rounded: "{rounded.sm}"
+    height: 32px
+  input-field:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.on-surface}"
+    rounded: "{rounded.sm}"
+    padding: 8px
+---
 
-## Purpose
+# Product Design Language
+
+## Overview
 
 This document teaches coding agents how to apply the product's design language when implementing UI.
 
-## Design Principles
+## Colors
 
-- Calm surfaces before decorative effects.
-- One clear primary action per context.
-- Status should guide decisions without becoming noise.
+Primary blue drives action, neutral panels hold editor and preview surfaces.
 
-## Visual Language
+## Typography
 
 The app should feel like a focused local document workspace: quiet, precise, and useful.
 
-## Tokens
+## Layout
 
-- Accent: #5E6DD6
-- Background: #17191F
-- Background Subtle: rgba(255, 255, 255, 0.08)
-- Text Primary: rgba(245, 255, 255, 0.94)
-- Radius: 8px
-- Large Radius: 14px
-- Font: SF Pro
+Dense split panes keep the markdown contract and rendered output visible together.
 
 ## Components
 
-### Button
+Buttons should stay compact, high contrast, and clear about primary vs secondary actions.
 
-Variants: Primary, Secondary, Ghost
-Sizes: Small, Medium, Large
-States: Default, Hover, Disabled
-
-### Input
-
-Variants: Default, With value, Disabled
-Sizes: Small, Medium, Large
-
-### Composer
-
-Variants: Hero, Compact
-Sizes: Compact, Expanded
-States: Empty, Focused, Streaming, With attachments
-
-### Auto Approve Toggle
-
-Variants: Off, On
-Sizes: Mini
-States: Default, Hover, Active, Disabled
-
-### Widget Container
-
-Variants: Dashboard, JSON, Canvas
-Sizes: Small, Medium, Large
-States: Empty, Loading, Populated, Error
-
-## Agent Implementation Rules
+## Do's and Don'ts
 
 - Read this design.md before changing UI.
 - Reuse documented tokens and component patterns.
@@ -95,10 +101,12 @@ States: Default, Disabled
       title: content.match(/^#\s+(.+)$/m)?.[1] || filename,
       repo: filename.split('/')[0],
       project: filename.split('/')[0],
+      path: `/mock/design-docs/${filename}`,
       modified: now,
       created: now,
       source: 'design-doc',
-      status: 'draft',
+      status: content.startsWith('---\n') ? 'ready' : 'needs_structure',
+      readiness: { state: content.startsWith('---\n') ? 'ready' : 'needs_structure', warnings: [] },
       summary: content.slice(0, 240),
     }))
   }
@@ -106,6 +114,8 @@ States: Default, Disabled
   window.planAPI = {
     getDesignDocs: async () => docs(),
     getDesignDocContent: async filename => store.get(filename) || null,
+    getDesignDocPath: async filename => `/mock/design-docs/${filename}`,
+    revealDesignDoc: async filename => store.has(filename),
     saveDesignDoc: async (filename, content) => {
       store.set(filename, content)
       return filename
@@ -114,7 +124,7 @@ States: Default, Disabled
       const cleanProject = String(project || 'local').toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'local'
       const cleanTitle = String(title || 'design').toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'design'
       const filename = `${cleanProject}/${cleanTitle}.md`
-      store.set(filename, `# ${title}\n\n## Purpose\n\nDescribe the product direction.\n\n## Tokens\n\n- Accent: #5E6DD6\n\n## Components\n\n### Button\n\nVariants: Primary, Secondary\n`)
+      store.set(filename, `---\nversion: alpha\nname: ${title}\ncolors:\n  primary: "#5E6DD6"\ntypography:\n  body-md:\n    fontFamily: Geist\n    fontSize: 15px\n    fontWeight: 400\n    lineHeight: 1.6\ncomponents:\n  button-primary:\n    backgroundColor: "{colors.primary}"\n    textColor: "#ffffff"\n---\n\n# ${title}\n\n## Overview\n\nDescribe the product direction.\n\n## Components\n\nDocument important component behavior.\n`)
       return filename
     },
     renameDesignDoc: async (filename, nextFilename) => {
@@ -129,6 +139,19 @@ States: Default, Disabled
     getPrefs: async () => ({}),
     setPrefs: async () => true,
     getSharingInfo: async () => ({ url: 'http://127.0.0.1:3847/' }),
+    lintDesignDoc: async content => ({
+      ok: true,
+      summary: { errors: 0, warnings: content.includes('broken-ref') ? 1 : 0, infos: 1 },
+      findings: content.includes('broken-ref') ? [{ severity: 'warning', path: 'components.button', message: 'Unresolved token reference {colors.broken-ref}.' }] : [],
+      tailwindConfig: { success: true, data: { theme: { extend: { colors: { primary: '#5E6DD6' } } } } },
+      dtcg: { success: true, data: { color: { primary: { $value: '#5E6DD6', $type: 'color' } } } },
+    }),
+    exportDesignDoc: async (content, format) => ({
+      ok: true,
+      data: format === 'tailwind'
+        ? { theme: { extend: { colors: { primary: '#5E6DD6' } } } }
+        : { color: { primary: { $value: '#5E6DD6', $type: 'color' } } },
+    }),
     onPlanUpdated: () => {},
   }
 })()

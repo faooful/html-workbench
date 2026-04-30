@@ -11,28 +11,13 @@
   <div id="app" data-theme="dark" data-pane-mode="split">
     <aside id="vault-rail">
       <div id="traffic-spacer"></div>
-      <header class="vault-header">
-        <div>
-          <p class="eyebrow">Local vault</p>
-          <h1>design.md</h1>
-        </div>
-        <button id="new-doc-btn" class="icon-btn" title="New design.md" aria-label="New design.md">+</button>
-      </header>
-
-      <section class="vault-actions">
-        <button id="import-placeholder-btn" class="primary-wide">New file</button>
-        <button id="rename-doc-btn">Rename</button>
-        <button id="delete-doc-btn">Delete</button>
-      </section>
 
       <section class="vault-section">
-        <div class="section-label">Files</div>
+        <div class="section-label rail-section-head">
+          <span>Projects</span>
+          <button id="new-doc-btn" class="icon-btn rail-new-btn" title="New design.md" aria-label="New design.md">＋</button>
+        </div>
         <div id="doc-list"></div>
-      </section>
-
-      <section class="vault-section recents">
-        <div class="section-label">Recent</div>
-        <div id="recent-list"></div>
       </section>
     </aside>
 
@@ -41,7 +26,6 @@
         <div class="doc-title-wrap">
           <button id="sidebar-toggle" class="icon-btn" aria-label="Toggle vault">☰</button>
           <div>
-            <p class="eyebrow">Design document</p>
             <h2 id="active-title">Untitled</h2>
           </div>
         </div>
@@ -50,6 +34,20 @@
           <button id="theme-btn" class="toolbar-btn">Light</button>
           <button id="save-btn" class="toolbar-btn">Save</button>
           <button id="copy-btn" class="toolbar-btn accent">Copy design.md</button>
+          <div class="more-menu">
+            <button id="more-actions-btn" class="toolbar-btn icon-toolbar" aria-haspopup="menu" aria-expanded="false" aria-label="More actions">⋯</button>
+            <div id="more-actions-menu" class="more-menu-popover hidden" role="menu">
+              <button id="agent-instruction-btn" role="menuitem">Copy agent prompt</button>
+              <button id="copy-path-btn" role="menuitem">Copy path</button>
+              <button id="reveal-doc-btn" role="menuitem">Reveal in Finder</button>
+              <hr>
+              <button id="rename-doc-btn" role="menuitem">Rename document</button>
+              <button id="delete-doc-btn" role="menuitem">Delete document</button>
+              <hr>
+              <button id="export-json-btn" role="menuitem">Copy token JSON</button>
+              <button id="export-tailwind-btn" role="menuitem">Copy Tailwind config</button>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -64,6 +62,7 @@
             <button class="preview-tab active" data-tab="document">Document</button>
             <button class="preview-tab" data-tab="tokens">Tokens</button>
             <button class="preview-tab" data-tab="components">Components</button>
+            <button class="preview-tab" data-tab="issues">Issues</button>
           </div>
           <button id="preview-full-btn" class="icon-btn" aria-label="Preview fullscreen">↗</button>
         </div>
@@ -73,7 +72,7 @@
         <section id="editor-pane" class="pane">
           <div id="editor-shell">
             <pre id="line-numbers" aria-hidden="true">1</pre>
-            <textarea id="markdown-editor" spellcheck="false" autocomplete="off" aria-label="Markdown editor"></textarea>
+            <textarea id="markdown-editor" spellcheck="false" autocomplete="off" wrap="off" aria-label="Markdown editor"></textarea>
           </div>
         </section>
 
@@ -82,6 +81,7 @@
             <article id="document-preview" class="preview-view markdown-body"></article>
             <article id="tokens-preview" class="preview-view hidden"></article>
             <article id="components-preview" class="preview-view hidden"></article>
+            <article id="issues-preview" class="preview-view hidden"></article>
           </div>
         </section>
       </div>
@@ -105,6 +105,28 @@
         <span><kbd>Esc</kbd> Close</span>
       </div>
     </div>
+  </div>
+
+  <div id="new-doc-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="new-doc-title">
+    <div class="modal-backdrop"></div>
+    <form id="new-doc-form" class="modal-card">
+      <div class="modal-header">
+        <p class="eyebrow">New file</p>
+        <h2 id="new-doc-title">Create DESIGN.md</h2>
+      </div>
+      <label>
+        <span>Document name</span>
+        <input id="new-doc-title-input" type="text" autocomplete="off" placeholder="Product Design Language" required />
+      </label>
+      <label>
+        <span>Project folder</span>
+        <input id="new-doc-project-input" type="text" autocomplete="off" placeholder="plan-viewer" />
+      </label>
+      <div class="modal-actions">
+        <button id="new-doc-cancel" type="button" class="toolbar-btn">Cancel</button>
+        <button type="submit" class="toolbar-btn primary">Create file</button>
+      </div>
+    </form>
   </div>
 
   <div id="toast"></div>

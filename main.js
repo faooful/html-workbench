@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
@@ -23,7 +23,62 @@ const PREFS_FILE       = path.join(__dirname, '.prefs.json')
 const SOURCES_FILE     = path.join(VIEWER_PLANS_DIR, '.sources.json')
 const CODEX_IMPORT_VERSION = 2
 
-const DEFAULT_DESIGN_DOC = `# Product Design Language
+const DEFAULT_DESIGN_DOC = `---
+version: alpha
+name: Product Design Language
+description: Local-first design system guidance for AI implementation agents.
+colors:
+  primary: "#5E6DD6"
+  secondary: "#8B949E"
+  tertiary: "#238636"
+  neutral: "#17191F"
+  surface: "#20232B"
+  on-surface: "#F2F4F8"
+  error: "#EF4444"
+typography:
+  headline-md:
+    fontFamily: Geist
+    fontSize: 28px
+    fontWeight: 650
+    lineHeight: 1.12
+  body-md:
+    fontFamily: Geist
+    fontSize: 15px
+    fontWeight: 400
+    lineHeight: 1.6
+  label-sm:
+    fontFamily: Geist Mono
+    fontSize: 11px
+    fontWeight: 700
+    lineHeight: 1
+    letterSpacing: 0.12em
+rounded:
+  sm: 6px
+  md: 10px
+  lg: 14px
+  full: 9999px
+spacing:
+  xs: 4px
+  sm: 8px
+  md: 16px
+  lg: 24px
+  xl: 40px
+components:
+  button-primary:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.on-surface}"
+    typography: "{typography.body-md}"
+    rounded: "{rounded.sm}"
+    padding: 0 12px
+    height: 32px
+  document-surface:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.on-surface}"
+    rounded: "{rounded.md}"
+    padding: "{spacing.lg}"
+---
+
+# Product Design Language
 
 ## Purpose
 
@@ -743,23 +798,41 @@ function ensureDefaultDesignDoc() {
   }, null, 2), 'utf8')
 }
 
+function extractDesignFrontMatter(content) {
+  const match = String(content || '').match(/^---\n([\s\S]*?)\n---(?:\n|$)/)
+  return match ? match[1] : ''
+}
+
 function designReadiness(content) {
-  const checks = [
-    ['purpose', /^##\s+(Purpose|Context|Product Context)/im],
-    ['principles', /^##\s+Design Principles/im],
-    ['visualLanguage', /^##\s+Visual Language/im],
-    ['tokens', /^##\s+Tokens/im],
-    ['components', /^##\s+(Components|Components And Patterns|Patterns)/im],
-    ['examples', /\b(Do:|Don't:|Do not:|Anti-patterns?)\b/im],
-    ['accessibility', /^##\s+Accessibility/im],
-    ['agentRules', /^##\s+Agent Implementation Rules/im],
-  ].map(([id, pattern]) => ({ id, passed: pattern.test(content) }))
-  const passed = checks.filter(c => c.passed).length
+  const frontMatter = extractDesignFrontMatter(content)
+  const hasFrontMatter = Boolean(frontMatter)
+  const hasPrimary = /^\s*primary:\s*["']?#[0-9a-f]{3,8}/im.test(frontMatter)
+  const hasTypography = /^\s*typography:\s*$/im.test(frontMatter)
+  const hasComponents = /^\s*components:\s*$/im.test(frontMatter)
+  const brokenRefs = [...frontMatter.matchAll(/\{([^}]+)\}/g)]
+    .map(match => match[1])
+    .filter(ref => !new RegExp(`^\\s*${ref.split('.')[1]}:\\s*`, 'im').test(frontMatter))
+  const bodySections = [...String(content || '').matchAll(/^##\s+(.+)$/gm)].map(match => match[1].trim())
+  const hasCanonicalSection = bodySections.some(section => /^(Overview|Brand & Style|Colors|Typography|Layout|Layout & Spacing|Components|Do's and Don'ts)$/i.test(section))
+  const warnings = [
+    !hasFrontMatter && 'Missing YAML front matter',
+    hasFrontMatter && !hasPrimary && 'Missing colors.primary',
+    hasFrontMatter && !hasTypography && 'Missing typography tokens',
+    hasFrontMatter && !hasComponents && 'Missing component tokens',
+    hasFrontMatter && !hasCanonicalSection && 'Missing canonical markdown sections',
+    brokenRefs.length && `${brokenRefs.length} unresolved token reference${brokenRefs.length === 1 ? '' : 's'}`,
+  ].filter(Boolean)
+
+  let state = 'ready'
+  if (!hasFrontMatter) state = 'needs_structure'
+  else if (warnings.length) state = 'warnings'
   return {
-    passed,
-    total: checks.length,
-    state: passed >= checks.length - 1 ? 'ready' : 'draft',
-    checks,
+    passed: warnings.length ? 0 : 1,
+    total: 1,
+    state,
+    warnings,
+    hasFrontMatter,
+    brokenRefs,
   }
 }
 
@@ -779,6 +852,7 @@ function getDesignDocs() {
         const readiness = designReadiness(content)
         docs.push({
           filename: rel,
+          path: full,
           kind: 'design-doc',
           title: extractTitle(content, entry.name),
           repo: project,
@@ -787,7 +861,7 @@ function getDesignDocs() {
           created: stat.birthtime?.toISOString?.() || stat.mtime.toISOString(),
           live: false,
           source: 'design-doc',
-          status: readiness.state === 'ready' ? 'ready' : 'draft',
+          status: readiness.state,
           readiness,
           versionCount: 0,
           trigger: null,
@@ -803,6 +877,20 @@ function getDesignDocs() {
   }
   walk(DESIGN_DOCS_DIR)
   return docs.sort((a, b) => new Date(b.modified) - new Date(a.modified))
+}
+
+function getDesignDocPath(filename) {
+  const filepath = designDocPath(filename)
+  const root = path.resolve(DESIGN_DOCS_DIR) + path.sep
+  if (!filepath.startsWith(root) || !fs.existsSync(filepath)) return null
+  return filepath
+}
+
+function revealDesignDoc(filename) {
+  const filepath = getDesignDocPath(filename)
+  if (!filepath) return false
+  shell.showItemInFolder(filepath)
+  return true
 }
 
 function getDesignDocContent(filename) {
@@ -835,23 +923,58 @@ function createDesignDoc(project = 'local', title = 'Untitled design') {
     i++
   }
 
-  const content = `# ${title || 'Untitled design'}
+  const content = `---
+version: alpha
+name: ${title || 'Untitled design'}
+description: Describe what this design system or feature should help an agent build.
+colors:
+  primary: "#5E6DD6"
+  secondary: "#8B949E"
+  neutral: "#17191F"
+  surface: "#20232B"
+  on-surface: "#F2F4F8"
+typography:
+  headline-md:
+    fontFamily: Geist
+    fontSize: 28px
+    fontWeight: 650
+    lineHeight: 1.12
+  body-md:
+    fontFamily: Geist
+    fontSize: 15px
+    fontWeight: 400
+    lineHeight: 1.6
+rounded:
+  sm: 6px
+  md: 10px
+spacing:
+  sm: 8px
+  md: 16px
+components:
+  button-primary:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.on-surface}"
+    rounded: "{rounded.sm}"
+    height: 32px
+---
 
-## Purpose
+# ${title || 'Untitled design'}
+
+## Overview
 
 Describe what this design system or feature should help an agent build.
 
-## Design Principles
+## Colors
 
-- Keep the interface calm and useful.
-- Prefer clear hierarchy over decoration.
+Explain the palette roles and when to use each color.
 
-## Tokens
+## Typography
 
-- Accent: #5E6DD6
-- Background: #17191F
-- Text: #F2F4F8
-- Radius: 8px
+Explain the hierarchy, tone, and readability expectations.
+
+## Layout
+
+Explain spacing, density, and grid behavior.
 
 ## Components
 
@@ -887,6 +1010,44 @@ function deleteDesignDoc(filename) {
   if (!filepath.startsWith(path.resolve(DESIGN_DOCS_DIR) + path.sep) || !fs.existsSync(filepath)) return false
   fs.rmSync(filepath)
   return true
+}
+
+async function lintDesignDoc(content) {
+  try {
+    const mod = await import('@google/design.md/linter')
+    const report = mod.lint(String(content || ''))
+    return {
+      ok: true,
+      summary: report.summary,
+      findings: report.findings || [],
+      tailwindConfig: report.tailwindConfig || null,
+      dtcg: report.dtcg || null,
+    }
+  } catch (err) {
+    return {
+      ok: false,
+      summary: { errors: 0, warnings: 1, infos: 0 },
+      findings: [{ severity: 'warning', path: 'linter', message: err.message || 'DESIGN.md linter unavailable' }],
+    }
+  }
+}
+
+async function exportDesignDoc(content, format) {
+  const report = await lintDesignDoc(content)
+  if (!report.ok) return report
+  if (format === 'tailwind') {
+    if (!report.tailwindConfig?.success) {
+      return { ok: false, message: report.tailwindConfig?.error || 'Tailwind export unavailable for this document.' }
+    }
+    return { ok: true, data: report.tailwindConfig.data }
+  }
+  if (format === 'dtcg') {
+    if (!report.dtcg?.success) {
+      return { ok: false, message: report.dtcg?.error || 'DTCG export unavailable for this document.' }
+    }
+    return { ok: true, data: report.dtcg.data }
+  }
+  return { ok: false, message: 'Unknown export format.' }
 }
 
 function decodeProjectFolder(folder) {
@@ -1455,6 +1616,10 @@ ipcMain.handle('save-design-doc', (_, filename, content) => saveDesignDoc(filena
 ipcMain.handle('create-design-doc', (_, project, title) => createDesignDoc(project, title))
 ipcMain.handle('rename-design-doc', (_, filename, nextFilename) => renameDesignDoc(filename, nextFilename))
 ipcMain.handle('delete-design-doc', (_, filename) => deleteDesignDoc(filename))
+ipcMain.handle('get-design-doc-path', (_, filename) => getDesignDocPath(filename))
+ipcMain.handle('reveal-design-doc', (_, filename) => revealDesignDoc(filename))
+ipcMain.handle('lint-design-doc', (_, content) => lintDesignDoc(content))
+ipcMain.handle('export-design-doc', (_, content, format) => exportDesignDoc(content, format))
 
 ipcMain.handle('get-plan-content', (_, filename) => {
   return getPlanContent(filename)
