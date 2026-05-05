@@ -1,5 +1,5 @@
 {
-  "name": "plan-viewer",
+  "name": "design-md-workbench",
   "version": "1.0.0",
   "main": "main.js",
   "scripts": {
@@ -7,14 +7,13 @@
     "build:renderer": "npm run build:css && npm run build:js",
     "build:css": "tailwindcss -c tailwind.config.js -i renderer/src/styles.css -o renderer/app.css",
     "build:js": "esbuild renderer/src/App.jsx --bundle --format=iife --global-name=DesignMdApp --outfile=renderer/app.bundle.js --jsx=automatic --loader:.js=jsx",
-    "bundle": "esbuild scripts/bundle-diffs.js --bundle --format=iife --global-name=PierreDiffs --platform=browser --outfile=renderer/pierre-diffs.bundle.js",
     "test:ui": "npm run build:renderer && playwright test",
     "test:visual": "npm run build:renderer && playwright test tests/ui.visual.spec.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "Local-first design.md workspace and archive for AI-agent implementation guidance.",
+  "description": "Local-first DESIGN.md workbench for AI-agent implementation guidance.",
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.8",
     "@fontsource-variable/geist-mono": "^5.2.7",
@@ -43,7 +42,6 @@
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
-    "@pierre/diffs": "latest",
     "@playwright/test": "^1.52.0",
     "autoprefixer": "^10.5.0",
     "esbuild": "latest",

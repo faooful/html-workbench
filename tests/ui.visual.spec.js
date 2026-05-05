@@ -1,16 +1,21 @@
 const { test, expect } = require('@playwright/test')
 const fs = require('node:fs')
+const path = require('node:path')
+const { pathToFileURL } = require('node:url')
+
+const APP_URL = `${pathToFileURL(path.resolve('renderer/index.html')).href}?testApi=1`
 
 test.beforeEach(() => {
   fs.mkdirSync('.ui-artifacts', { recursive: true })
 })
 
 test('desktop harness renders the split design.md editor', async ({ page }) => {
-  await page.goto('/__desktop-test')
+  await page.goto(APP_URL)
+  await expect.poll(() => page.evaluate(() => Boolean(window.designAPI) && !window['plan' + 'API'])).toBe(true)
   await expect(page.getByText('Projects')).toBeVisible()
   await expect(page.getByLabel('Markdown editor')).toBeVisible()
   await expect(page.getByRole('tab', { name: 'Document', exact: true })).toBeVisible()
-  await expect(page.locator('#document-preview').getByRole('heading', { name: 'Product Design Language' })).toBeVisible()
+  await expect(page.locator('#document-preview').getByRole('heading', { name: 'DESIGN.md Workbench Design Language' })).toBeVisible()
   await page.getByLabel('Markdown editor').evaluate(el => {
     el.scrollTop = el.scrollHeight
     el.dispatchEvent(new Event('scroll', { bubbles: true }))
@@ -20,7 +25,7 @@ test('desktop harness renders the split design.md editor', async ({ page }) => {
 })
 
 test('preview parses tokens and components from markdown conventions', async ({ page }) => {
-  await page.goto('/__desktop-test')
+  await page.goto(APP_URL)
 
   await page.getByRole('tab', { name: 'Tokens' }).click()
   await expect(page.locator('#tokens-preview .preview-section-title', { hasText: 'Colors' })).toBeVisible()
@@ -43,7 +48,7 @@ test('preview parses tokens and components from markdown conventions', async ({ 
 })
 
 test('editing, pane modes, theme toggle, and command palette work', async ({ page }) => {
-  await page.goto('/__desktop-test')
+  await page.goto(APP_URL)
 
   const editor = page.getByLabel('Markdown editor')
   await editor.fill('---\nversion: alpha\nname: Changed Design\ncolors:\n  primary: "#FF3366"\ntypography:\n  body-md:\n    fontFamily: Geist\n    fontSize: 15px\n    fontWeight: 400\n    lineHeight: 1.6\ncomponents:\n  button-primary:\n    backgroundColor: "{colors.primary}"\n    textColor: "#ffffff"\n---\n\n# Changed Design\n\n## Overview\n\nA stricter contract.\n')
@@ -93,7 +98,7 @@ test('editing, pane modes, theme toggle, and command palette work', async ({ pag
 })
 
 test('YAML starter blocks merge into front matter instead of markdown body', async ({ page }) => {
-  await page.goto('/__desktop-test')
+  await page.goto(APP_URL)
 
   const editor = page.getByLabel('Markdown editor')
   await editor.fill('# Draft Document\n\n## Purpose\n\nA prose draft.\n')
@@ -113,7 +118,7 @@ test('YAML starter blocks merge into front matter instead of markdown body', asy
 })
 
 test('component playground groups families and updates from live YAML edits', async ({ page }) => {
-  await page.goto('/__desktop-test')
+  await page.goto(APP_URL)
 
   const editor = page.getByLabel('Markdown editor')
   await editor.fill('---\nversion: alpha\nname: Playground Contract\ncolors:\n  primary: "#1166FF"\n  primary-hover: "#0B4FCC"\n  danger: "#FF4455"\n  text: "#FFFFFF"\n  surface: "#20232B"\n  panel: "#262A33"\nrounded:\n  sm: 6px\n  md: 10px\nspacing:\n  md: 16px\ncomponents:\n  button-primary:\n    backgroundColor: "{colors.primary}"\n    textColor: "{colors.text}"\n    rounded: "{rounded.sm}"\n    height: 34px\n    padding: "0 14px"\n  button-secondary:\n    backgroundColor: "{colors.surface}"\n    textColor: "{colors.text}"\n    rounded: "{rounded.sm}"\n  button-primary-hover:\n    backgroundColor: "{colors.primary-hover}"\n    textColor: "{colors.text}"\n  button-danger:\n    backgroundColor: "{colors.danger}"\n    textColor: "{colors.text}"\n  input-field:\n    backgroundColor: "{colors.surface}"\n    textColor: "{colors.text}"\n    rounded: "{rounded.sm}"\n    padding: 8px\n  input-error:\n    backgroundColor: "{colors.surface}"\n    textColor: "{colors.text}"\n    borderColor: "{colors.danger}"\n  card-panel:\n    backgroundColor: "{colors.panel}"\n    textColor: "{colors.text}"\n    rounded: "{rounded.md}"\n    padding: "{spacing.md}"\n  modal-dialog:\n    backgroundColor: "{colors.panel}"\n    textColor: "{colors.text}"\n    rounded: "{rounded.md}"\n  toolbar-main:\n    backgroundColor: "{colors.surface}"\n    textColor: "{colors.text}"\n  sidebar-main:\n    backgroundColor: "{colors.surface}"\n    textColor: "{colors.text}"\n  table-default:\n    backgroundColor: "{colors.surface}"\n    textColor: "{colors.text}"\n  toast-success:\n    backgroundColor: "{colors.panel}"\n    textColor: "{colors.text}"\n  avatar-chip:\n    backgroundColor: "{colors.panel}"\n    textColor: "{colors.text}"\n---\n\n# Playground Contract\n')
@@ -140,7 +145,7 @@ test('component playground groups families and updates from live YAML edits', as
 })
 
 test('component playground explains empty component contracts', async ({ page }) => {
-  await page.goto('/__desktop-test')
+  await page.goto(APP_URL)
   await page.getByLabel('Markdown editor').fill('---\nversion: alpha\nname: Empty Contract\ncolors:\n  primary: "#5E6DD6"\n---\n\n# Empty Contract\n')
   await page.getByRole('tab', { name: 'Components' }).click()
   await expect(page.locator('#components-preview')).toContainText('No components in this file')
@@ -151,7 +156,7 @@ test('component playground explains empty component contracts', async ({ page })
 })
 
 test('component tab treats flat sibling design files as separate contracts', async ({ page }) => {
-  await page.goto('/__desktop-test')
+  await page.goto(APP_URL)
 
   await page.getByText('Bits Chat & Workspace').click()
   await expect(page.locator('#document-preview').getByRole('heading', { name: 'Bits Chat & Workspace' })).toBeVisible()
@@ -167,7 +172,7 @@ test('component tab treats flat sibling design files as separate contracts', asy
 })
 
 test('can link an external design folder without copying files', async ({ page }) => {
-  await page.goto('/__desktop-test')
+  await page.goto(APP_URL)
 
   await page.getByRole('button', { name: 'Link design folder' }).click()
   await expect(page.getByText('External Tokens')).toBeVisible()
@@ -180,7 +185,7 @@ test('can link an external design folder without copying files', async ({ page }
 })
 
 test('local vault can create, rename, delete, and save docs', async ({ page }) => {
-  await page.goto('/__desktop-test')
+  await page.goto(APP_URL)
 
   const dialogAnswers = ['test-project/components/sidebar/DESIGN.md', true]
   page.on('dialog', async dialog => {
@@ -216,7 +221,7 @@ test('local vault can create, rename, delete, and save docs', async ({ page }) =
 
 test('narrow viewport keeps the editor usable', async ({ page }) => {
   await page.setViewportSize({ width: 880, height: 760 })
-  await page.goto('/__desktop-test')
+  await page.goto(APP_URL)
   await expect(page.getByLabel('Markdown editor')).toBeVisible()
   await expect(page.locator('#vault-rail')).toBeHidden()
   await page.screenshot({ path: '.ui-artifacts/narrow.png', fullPage: true })
@@ -224,7 +229,7 @@ test('narrow viewport keeps the editor usable', async ({ page }) => {
 
 test('components preview reflows without horizontal overflow in split mode', async ({ page }) => {
   await page.setViewportSize({ width: 1240, height: 760 })
-  await page.goto('/__desktop-test')
+  await page.goto(APP_URL)
   await page.getByRole('tab', { name: 'Components' }).click()
   await expect(page.locator('.playground-family[data-family="button"]')).toBeVisible()
   const overflow = await page.locator('#preview-scroll').evaluate(el => el.scrollWidth - el.clientWidth)

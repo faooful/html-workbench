@@ -78,7 +78,7 @@ const STARTER_BLOCKS = [
     type: 'yaml',
     content: `---
 version: alpha
-name: Product Design Language
+name: DESIGN.md Workbench Design Language
 description: Design contract for agents implementing this product.
 colors:
   primary: "#5E6DD6"
@@ -1009,11 +1009,11 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!window.planAPI.onDesignDocsUpdated) return undefined
-    return window.planAPI.onDesignDocsUpdated(async () => {
-      const list = await window.planAPI.getDesignDocs()
+    if (!window.designAPI.onDesignDocsUpdated) return undefined
+    return window.designAPI.onDesignDocsUpdated(async () => {
+      const list = await window.designAPI.getDesignDocs()
       setDocs(list)
-      if (window.planAPI.getDesignSources) setDesignSources(await window.planAPI.getDesignSources())
+      if (window.designAPI.getDesignSources) setDesignSources(await window.designAPI.getDesignSources())
       if (!dirty && activeFilename) await openDoc(activeFilename, list)
     })
   }, [activeFilename, dirty])
@@ -1046,9 +1046,9 @@ function App() {
 
   useEffect(() => {
     const timer = setTimeout(async () => {
-      if (!window.planAPI?.lintDesignDoc) return
+      if (!window.designAPI?.lintDesignDoc) return
       try {
-        const report = await window.planAPI.lintDesignDoc(content)
+        const report = await window.designAPI.lintDesignDoc(content)
         setLintReport(report)
       } catch (_) {}
     }, 500)
@@ -1072,7 +1072,7 @@ function App() {
       const loaded = []
       for (const doc of sameProjectDocs.slice(0, 8)) {
         try {
-          const text = await window.planAPI.getDesignDocContent(doc.filename)
+          const text = await window.designAPI.getDesignDocContent(doc.filename)
           const docAnalysis = analyzeDesignDoc(text || '')
           if (hasRenderableComponents(docAnalysis)) loaded.push({ ...doc, analysis: docAnalysis })
         } catch (_) {}
@@ -1088,28 +1088,28 @@ function App() {
   }, [activeFilename, activeDoc?.project, activeHasRenderableComponents, docs])
 
   async function loadDocs(nextActive = activeFilename) {
-    const list = await window.planAPI.getDesignDocs()
+    const list = await window.designAPI.getDesignDocs()
     setDocs(list)
-    if (window.planAPI.getDesignSources) setDesignSources(await window.planAPI.getDesignSources())
+    if (window.designAPI.getDesignSources) setDesignSources(await window.designAPI.getDesignSources())
     const target = nextActive || list[0]?.filename || ''
     if (target) await openDoc(target, list)
   }
 
   async function openDoc(filename, list = docs) {
-    const next = await window.planAPI.getDesignDocContent(filename)
+    const next = await window.designAPI.getDesignDocContent(filename)
     if (next == null) return
     setActiveFilename(filename)
     setContent(next)
     setDirty(false)
     setSaveState('Saved')
     setLintReport(null)
-    if (!list.find(doc => doc.filename === filename)) setDocs(await window.planAPI.getDesignDocs())
+    if (!list.find(doc => doc.filename === filename)) setDocs(await window.designAPI.getDesignDocs())
   }
 
   async function saveNow() {
     if (!activeFilename) return
     setSaveState('Saving')
-    const ok = await window.planAPI.saveDesignDoc(activeFilename, content)
+    const ok = await window.designAPI.saveDesignDoc(activeFilename, content)
     setDirty(false)
     setSaveState(ok ? 'Saved' : 'Error')
   }
@@ -1122,7 +1122,7 @@ function App() {
 
   async function createDoc(event) {
     event.preventDefault()
-    const filename = await window.planAPI.createDesignDoc(newProject || 'local', newTitle || 'DESIGN.md')
+    const filename = await window.designAPI.createDesignDoc(newProject || 'local', newTitle || 'DESIGN.md')
     setNewOpen(false)
     setNewTitle('')
     setNewProject('')
@@ -1131,18 +1131,18 @@ function App() {
   }
 
   async function linkFolder() {
-    if (!window.planAPI.linkDesignFolder) {
+    if (!window.designAPI.linkDesignFolder) {
       ping('Folder linking is unavailable')
       return
     }
-    const source = await window.planAPI.linkDesignFolder()
+    const source = await window.designAPI.linkDesignFolder()
     if (!source) return
     await loadDocs()
     ping(`Linked ${source.name || 'design folder'}`)
   }
 
   async function refreshDesignFolders() {
-    if (window.planAPI.refreshDesignFolders) await window.planAPI.refreshDesignFolders()
+    if (window.designAPI.refreshDesignFolders) await window.designAPI.refreshDesignFolders()
     await loadDocs(activeFilename)
     ping('Design files refreshed')
   }
@@ -1155,7 +1155,7 @@ function App() {
     const current = activeFilename
     const next = window.prompt('Rename document path', current)
     if (!next || next === current) return
-    const renamed = await window.planAPI.renameDesignDoc(current, next)
+    const renamed = await window.designAPI.renameDesignDoc(current, next)
     if (renamed) {
       await loadDocs(renamed)
       ping('Renamed document')
@@ -1168,9 +1168,9 @@ function App() {
       ping('Linked files stay in their source folder')
       return
     }
-    await window.planAPI.deleteDesignDoc(activeFilename)
+    await window.designAPI.deleteDesignDoc(activeFilename)
     setDeleteOpen(false)
-    const remaining = (await window.planAPI.getDesignDocs()).filter(doc => doc.filename !== activeFilename)
+    const remaining = (await window.designAPI.getDesignDocs()).filter(doc => doc.filename !== activeFilename)
     setDocs(remaining)
     if (remaining[0]) await openDoc(remaining[0].filename, remaining)
     ping('Deleted document')
@@ -1218,17 +1218,17 @@ function App() {
   }
 
   async function copyPath() {
-    const path = await window.planAPI.getDesignDocPath(activeFilename)
+    const path = await window.designAPI.getDesignDocPath(activeFilename)
     await copyText('Path copied', path)
   }
 
   async function revealDoc() {
-    await window.planAPI.revealDesignDoc(activeFilename)
+    await window.designAPI.revealDesignDoc(activeFilename)
     ping('Opened in Finder')
   }
 
   async function exportTokens(format) {
-    const result = await window.planAPI.exportDesignDoc(content, format)
+    const result = await window.designAPI.exportDesignDoc(content, format)
     if (!result?.ok) {
       ping(result?.reason || 'Export unavailable')
       return
@@ -1476,7 +1476,7 @@ function App() {
             <DialogDescription className="text-sm text-muted-foreground">Create a root or scoped design contract, for example DESIGN.md or components/table/DESIGN.md.</DialogDescription>
             <form className="grid gap-3" onSubmit={createDoc}>
               <Label>Document path<Input aria-label="Document path" value={newTitle} onChange={event => setNewTitle(event.target.value)} placeholder="components/table/DESIGN.md" required /></Label>
-              <Label>Project folder<Input aria-label="Project folder" value={newProject} onChange={event => setNewProject(event.target.value)} placeholder="plan-viewer" /></Label>
+              <Label>Project folder<Input aria-label="Project folder" value={newProject} onChange={event => setNewProject(event.target.value)} placeholder="design-md-workbench" /></Label>
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="ghost" onClick={() => setNewOpen(false)}>Cancel</Button>
                 <Button type="submit">Create file</Button>

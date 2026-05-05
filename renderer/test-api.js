@@ -1,13 +1,13 @@
 (function () {
-  if (window.planAPI) return
+  if (window.designAPI) return
   if (!location.pathname.includes('__desktop-test') && !location.search.includes('testApi=1')) return
 
   const now = new Date().toISOString()
   const store = new Map()
   const persistedLinked = JSON.parse(localStorage.getItem('design-md-linked-sources') || '[]')
-  store.set('plan-viewer/design.md', `---
+  store.set('design-md-workbench/design.md', `---
 version: alpha
-name: Product Design Language
+name: DESIGN.md Workbench Design Language
 description: Local design contract for implementation agents.
 colors:
   primary: "#5E6DD6"
@@ -46,7 +46,7 @@ components:
     padding: 8px
 ---
 
-# Product Design Language
+# DESIGN.md Workbench Design Language
 
 ## Overview
 
@@ -183,7 +183,7 @@ This file is read from a linked design folder.
     }))
   }
 
-  window.planAPI = {
+  window.designAPI = {
     getDesignDocs: async () => docs(),
     getDesignDocContent: async filename => store.get(filename) || null,
     getDesignDocPath: async filename => `/mock/design-docs/${filename}`,
@@ -230,9 +230,6 @@ This file is read from a linked design folder.
       return next
     },
     deleteDesignDoc: async filename => store.delete(filename),
-    getPrefs: async () => ({}),
-    setPrefs: async () => true,
-    getSharingInfo: async () => ({ url: 'http://127.0.0.1:3847/' }),
     onDesignDocsUpdated: () => () => {},
     lintDesignDoc: async content => ({
       ok: true,
@@ -247,6 +244,5 @@ This file is read from a linked design folder.
         ? { theme: { extend: { colors: { primary: '#5E6DD6' } } } }
         : { color: { primary: { $value: '#5E6DD6', $type: 'color' } } },
     }),
-    onPlanUpdated: () => {},
   }
 })()
