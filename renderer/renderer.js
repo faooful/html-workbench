@@ -465,6 +465,11 @@ function titleCase(value) {
   return String(value || '').replace(/[-_]+/g, ' ').replace(/\b\w/g, char => char.toUpperCase())
 }
 
+function sentenceCase(value) {
+  const text = titleCase(value)
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : 'Default'
+}
+
 function renderDocument(analysis) {
   const summary = analysis.hasFrontMatter ? renderContractSummary(analysis) : '<div class="contract-summary prose-only"><strong>Prose-only draft</strong><span>Add YAML front matter to turn this into a Stitch-style DESIGN.md contract.</span></div>'
   documentPreview.innerHTML = `${summary}${marked.parse(analysis.body || '')}`
@@ -509,25 +514,117 @@ function renderTokens(analysis) {
 function renderComponents(analysis) {
   const components = analysis.hasFrontMatter ? analysis.components : analysis.fallbackComponents
   if (!components.length) {
-    componentsPreview.innerHTML = '<div class="preview-empty">Add a <code>components:</code> map in YAML front matter. Markdown component prose will still render in the Document tab.</div>'
+    componentsPreview.innerHTML = analysis.hasFrontMatter
+      ? renderComponentsStarter()
+      : '<div class="preview-empty">Add a <code>components:</code> map in YAML front matter, or describe components under a markdown <code>## Components</code> section.</div>'
     return
   }
   const accent = resolveTokenValue('{colors.primary}', analysis.tokens).display || '#5E6DD6'
   const intro = analysis.hasFrontMatter
     ? `<div class="component-source-note is-contract">
-        <strong>Component contract</strong>
-        <span>Rendered from YAML front matter. Component entries map token properties to preview styles.</span>
+        <strong>From DESIGN.md contract</strong>
+        <span>Live playground generated from YAML component entries. Edit tokens or component props and the examples update here.</span>
       </div>`
     : `<div class="component-source-note is-fallback">
-        <strong>Markdown fallback</strong>
-        <span>These previews are inferred from prose. Add YAML front matter <code>components:</code> entries to make them real DESIGN.md contract components.</span>
+        <strong>Inferred from prose</strong>
+        <span>These draft previews come from markdown text. Add YAML front matter <code>components:</code> entries to make them real DESIGN.md contract components.</span>
       </div>`
-  componentsPreview.innerHTML = intro + components.map(component => component.source === 'frontmatter'
-    ? renderSpecComponent(component, analysis.tokens, accent)
-    : renderComponent(component, accent)).join('')
+  if (analysis.hasFrontMatter) {
+    const families = groupSpecComponentFamilies(components, analysis.tokens)
+    componentsPreview.innerHTML = intro + families.map(family => renderComponentFamily(family, accent)).join('')
+    return
+  }
+  componentsPreview.innerHTML = intro + components.map(component => renderComponent(component, accent)).join('')
 }
 
-function renderSpecComponent(component, tokens, accent) {
+function renderComponentsStarter() {
+  const starter = `components:
+  button-primary:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.on-primary}"
+    rounded: "{rounded.sm}"
+    height: 32px
+    padding: "0 12px"
+  button-primary-hover:
+    backgroundColor: "{colors.primary-hover}"
+    textColor: "{colors.on-primary}"
+  input-field:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.text}"
+    rounded: "{rounded.sm}"
+    padding: 8px`
+  return `<div class="preview-empty component-empty">
+    <strong>No component contract yet</strong>
+    <p>Add a <code>components:</code> map to YAML front matter. Related keys are grouped into live playground families.</p>
+    <pre><code>${escapeHtml(starter)}</code></pre>
+  </div>`
+}
+
+function groupSpecComponentFamilies(components, tokens) {
+  const families = new Map()
+  for (const component of components) {
+    const familyKey = componentFamilyKey(component.name)
+    const family = families.get(familyKey) || {
+      key: familyKey,
+      title: componentFamilyTitle(familyKey),
+      type: componentFamilyType(familyKey),
+      entries: [],
+      unresolved: [],
+    }
+    const entry = normalizeComponentEntry(component, familyKey, tokens)
+    family.entries.push(entry)
+    family.unresolved.push(...entry.unresolved)
+    families.set(familyKey, family)
+  }
+  return [...families.values()].map(family => {
+    const defaultEntry = family.entries.find(entry => entry.state === 'default')
+    const primaryEntry = family.entries.find(entry => /primary|default|field/i.test(entry.variant)) || family.entries[0]
+    return {
+      ...family,
+      primary: defaultEntry || primaryEntry,
+      variants: uniqueEntries(family.entries, entry => entry.variant),
+      states: uniqueEntries(family.entries, entry => entry.state),
+      unresolved: [...new Set(family.unresolved)],
+    }
+  })
+}
+
+function componentFamilyKey(name) {
+  const [first] = String(name || 'component').toLowerCase().split(/[-_\s]+/).filter(Boolean)
+  return first || 'component'
+}
+
+function componentFamilyTitle(key) {
+  if (/input|field|textarea|select/.test(key)) return 'Input'
+  return titleCase(key)
+}
+
+function componentFamilyType(key) {
+  if (/button|btn|cta/.test(key)) return 'button'
+  if (/input|field|textarea|select/.test(key)) return 'input'
+  return 'generic'
+}
+
+function normalizeComponentEntry(component, familyKey, tokens) {
+  const parts = String(component.name || '').toLowerCase().split(/[-_\s]+/).filter(Boolean)
+  const suffix = parts[0] === familyKey ? parts.slice(1) : parts
+  const stateTerms = ['hover', 'active', 'selected', 'pressed', 'disabled', 'loading', 'error', 'invalid', 'focus', 'focused', 'default']
+  const state = suffix.find(part => stateTerms.includes(part)) || (/disabled|error|invalid|loading|hover|active|focus/i.test(component.name) ? String(component.name).match(/disabled|error|invalid|loading|hover|active|focus/i)[0].toLowerCase() : 'default')
+  const variantParts = suffix.filter(part => !stateTerms.includes(part))
+  const variant = variantParts.join('-') || (familyKey === 'input' ? 'field' : 'default')
+  const resolved = resolveComponentProps(component, tokens)
+  return {
+    ...component,
+    variant,
+    variantLabel: sentenceCase(variant),
+    state,
+    stateLabel: sentenceCase(state === 'focus' ? 'focused' : state),
+    resolved: resolved.values,
+    unresolved: resolved.unresolved,
+  }
+}
+
+function resolveComponentProps(component, tokens) {
   const resolved = {}
   const unresolved = []
   for (const [key, value] of Object.entries(component.props || {})) {
@@ -535,22 +632,209 @@ function renderSpecComponent(component, tokens, accent) {
     resolved[key] = result.display
     unresolved.push(...result.unresolved)
   }
-  const style = [
-    resolved.backgroundColor && `--spec-bg:${escapeHtml(resolved.backgroundColor)}`,
-    resolved.textColor && `--spec-fg:${escapeHtml(resolved.textColor)}`,
-    resolved.rounded && `--spec-radius:${escapeHtml(resolved.rounded)}`,
-    resolved.height && `--spec-height:${escapeHtml(resolved.height)}`,
-    resolved.padding && `--spec-padding:${escapeHtml(resolved.padding)}`,
-  ].filter(Boolean).join(';')
-  return `<section class="component-card spec-component">
-    ${componentHeader({ title: component.title }, 'Component token')}
-    <div class="spec-demo" style="${style}">
-      <button class="spec-button">${escapeHtml(component.title.replace(/\b(Primary|Secondary|Hover|Active|Disabled)\b/gi, '').trim() || component.title)}</button>
-      <dl>${Object.entries(resolved).map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>
-      ${unresolved.length ? `<p class="component-warning">Unresolved: ${escapeHtml(unresolved.join(', '))}</p>` : ''}
+  return { values: resolved, unresolved: [...new Set(unresolved)] }
+}
+
+function uniqueEntries(entries, keyFn) {
+  const seen = new Set()
+  return entries.filter(entry => {
+    const key = keyFn(entry)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function renderComponentFamily(family, accent) {
+  if (family.type === 'button') return renderButtonFamily(family, accent)
+  if (family.type === 'input') return renderInputFamily(family)
+  return renderGenericFamily(family)
+}
+
+function renderFamilyHeader(family) {
+  const warnings = familyWarnings(family)
+  return `<header class="playground-header">
+    <div>
+      <span class="component-kicker">Component playground</span>
+      <h3>${escapeHtml(family.title)}</h3>
+      <p>From DESIGN.md contract · ${family.entries.length} definition${family.entries.length === 1 ? '' : 's'}</p>
     </div>
-    ${componentDefinitionBlock(component.name, component.props, 'YAML definition')}
+    ${warnings.length ? `<div class="component-family-warning">${warnings.map(warning => `<span>${escapeHtml(warning)}</span>`).join('')}</div>` : ''}
+  </header>`
+}
+
+function renderButtonFamily(family, accent) {
+  const primary = family.primary
+  const variants = family.variants.length ? family.variants : [primary]
+  const states = family.states.length ? family.states : [primary]
+  return `<section class="component-card playground-family" data-family="${escapeHtml(family.key)}">
+    ${renderFamilyHeader(family)}
+    <div class="playground-layout">
+      <div class="playground-canvas">
+        ${demoLabel('Primary example')}
+        <button class="demo-button contract-button primary" style="${componentStyleVars(primary, accent)}">${escapeHtml(family.title)}</button>
+      </div>
+      <div class="playground-controls">
+        <div>${demoLabel('Variants')}<div class="demo-row">
+          ${variants.map(entry => `<button class="demo-button contract-button ${variantClass(entry.variantLabel, 0)}" style="${componentStyleVars(entry, accent)}">${escapeHtml(entry.variantLabel)}</button>`).join('')}
+        </div></div>
+        <div>${demoLabel('States')}<div class="demo-row">
+          ${renderButtonStates(primary, states, accent)}
+        </div></div>
+        ${renderButtonSizeRow(primary, accent)}
+      </div>
+    </div>
+    ${renderContractGrid(primary)}
+    ${family.unresolved.length ? renderInlineWarnings(family.unresolved) : ''}
+    ${componentFamilyDefinitionBlock(family)}
   </section>`
+}
+
+function renderButtonStates(primary, states, accent) {
+  const stateEntries = states.some(entry => entry.state !== 'default') ? states : [
+    { ...primary, state: 'default', stateLabel: 'Default' },
+    { ...primary, state: 'hover', stateLabel: 'Hover' },
+    { ...primary, state: 'active', stateLabel: 'Active' },
+    { ...primary, state: 'disabled', stateLabel: 'Disabled' },
+  ]
+  return stateEntries.map(entry => {
+    const disabled = entry.state === 'disabled'
+    const label = entry.stateLabel || sentenceCase(entry.state)
+    const stateClassName = entry.state === 'default' ? 'secondary' : stateClass(entry.state)
+    return `<button class="demo-button contract-button ${stateClassName} is-${escapeHtml(entry.state)}" ${disabled ? 'disabled' : ''} style="${componentStyleVars(entry, accent)}">${entry.state === 'loading' ? '<span class="button-loader" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>' : ''}${escapeHtml(label)}</button>`
+  }).join('')
+}
+
+function renderButtonSizeRow(primary, accent) {
+  if (!primary?.resolved?.height && !primary?.resolved?.padding) return ''
+  const sizes = [
+    ['Small', '26px', '0 9px'],
+    ['Medium', primary.resolved.height || '32px', primary.resolved.padding || '0 12px'],
+    ['Large', '40px', '0 16px'],
+  ]
+  return `<div>${demoLabel('Sizes')}<div class="demo-row demo-row--baseline">
+    ${sizes.map(([label, height, padding]) => `<button class="demo-button contract-button primary" style="${componentStyleVars(primary, accent)};--component-height:${height};--component-padding:${padding}">${label}</button>`).join('')}
+  </div></div>`
+}
+
+function renderInputFamily(family) {
+  const primary = family.primary
+  const errorEntry = family.entries.find(entry => /error|invalid/.test(entry.state) || /error|invalid/.test(entry.variant)) || primary
+  const disabledEntry = family.entries.find(entry => entry.state === 'disabled' || /disabled/.test(entry.variant)) || primary
+  return `<section class="component-card playground-family playground-family--input" data-family="${escapeHtml(family.key)}">
+    ${renderFamilyHeader(family)}
+    <div class="input-playground">
+      ${renderInputExample('Default', primary, '', false)}
+      ${renderInputExample('With value', primary, 'Hello, world', false)}
+      ${renderInputExample('Focused', primary, 'Focused input', false, 'is-focused')}
+      ${renderInputExample('Disabled', disabledEntry, '', true)}
+      ${renderInputExample('Error', errorEntry, 'Invalid value', false, 'is-error')}
+    </div>
+    ${renderContractGrid(primary)}
+    ${family.unresolved.length ? renderInlineWarnings(family.unresolved) : ''}
+    ${componentFamilyDefinitionBlock(family)}
+  </section>`
+}
+
+function renderInputExample(label, entry, value = '', disabled = false, className = '') {
+  return `<label class="demo-field contract-input-field ${escapeHtml(className)}" style="${componentStyleVars(entry)}">
+    <span>${escapeHtml(label)}</span>
+    <input class="demo-input contract-input" ${disabled ? 'disabled' : ''} value="${escapeHtml(value)}" placeholder="Placeholder text..." />
+  </label>`
+}
+
+function renderGenericFamily(family) {
+  const primary = family.primary
+  return `<section class="component-card playground-family playground-family--generic" data-family="${escapeHtml(family.key)}">
+    ${renderFamilyHeader(family)}
+    <div class="generic-playground-surface" style="${componentStyleVars(primary)}">
+      <strong>${escapeHtml(family.title)}</strong>
+      <span>Generic component surface generated from available background, text, radius, spacing, and border properties.</span>
+    </div>
+    ${renderContractGrid(primary)}
+    ${family.unresolved.length ? renderInlineWarnings(family.unresolved) : ''}
+    ${componentFamilyDefinitionBlock(family)}
+  </section>`
+}
+
+function componentStyleVars(entry, accent = '') {
+  const resolved = entry?.resolved || {}
+  return [
+    resolved.backgroundColor && `--component-bg:${escapeHtml(resolved.backgroundColor)}`,
+    resolved.textColor && `--component-fg:${escapeHtml(resolved.textColor)}`,
+    resolved.borderColor && `--component-border:${escapeHtml(resolved.borderColor)}`,
+    resolved.rounded && `--component-radius:${escapeHtml(resolved.rounded)}`,
+    resolved.radius && `--component-radius:${escapeHtml(resolved.radius)}`,
+    resolved.height && `--component-height:${escapeHtml(resolved.height)}`,
+    resolved.padding && `--component-padding:${escapeHtml(resolved.padding)}`,
+    resolved.shadow && `--component-shadow:${escapeHtml(resolved.shadow)}`,
+    accent && `--demo-accent:${escapeHtml(accent)}`,
+  ].filter(Boolean).join(';')
+}
+
+function renderContractGrid(entry) {
+  const rows = Object.entries(entry?.resolved || {})
+  if (!rows.length) return ''
+  return `<dl class="component-contract-grid">
+    ${rows.map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}
+  </dl>`
+}
+
+function renderInlineWarnings(unresolved) {
+  return `<div class="component-inline-warning"><strong>Unresolved references</strong><span>${escapeHtml(unresolved.join(', '))}</span></div>`
+}
+
+function familyWarnings(family) {
+  const warnings = []
+  if (family.unresolved.length) warnings.push(`${family.unresolved.length} unresolved ref${family.unresolved.length === 1 ? '' : 's'}`)
+  for (const entry of family.entries) {
+    const bg = entry.resolved.backgroundColor
+    const fg = entry.resolved.textColor
+    const ratio = contrastRatio(bg, fg)
+    if (ratio !== null && ratio < 4.5) {
+      warnings.push(`${entry.variantLabel}: ${ratio.toFixed(1)} contrast`)
+    }
+  }
+  return [...new Set(warnings)]
+}
+
+function componentFamilyDefinitionBlock(family) {
+  const lines = ['components:']
+  for (const entry of family.entries) {
+    lines.push(`  ${entry.name}:`)
+    for (const [key, value] of Object.entries(entry.props || {})) {
+      lines.push(`    ${key}: ${formatYamlValue(value)}`)
+    }
+  }
+  return `<details class="component-definition is-contract">
+    <summary>YAML source</summary>
+    <pre><code>${escapeHtml(lines.join('\n'))}</code></pre>
+  </details>`
+}
+
+function contrastRatio(bg, fg) {
+  const bgRgb = hexToRgb(bg)
+  const fgRgb = hexToRgb(fg)
+  if (!bgRgb || !fgRgb) return null
+  const lighter = Math.max(relativeLuminance(bgRgb), relativeLuminance(fgRgb))
+  const darker = Math.min(relativeLuminance(bgRgb), relativeLuminance(fgRgb))
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+function hexToRgb(value) {
+  const match = String(value || '').trim().match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i)
+  if (!match) return null
+  const hex = match[1].length === 3 ? match[1].split('').map(char => char + char).join('') : match[1]
+  return {
+    r: parseInt(hex.slice(0, 2), 16) / 255,
+    g: parseInt(hex.slice(2, 4), 16) / 255,
+    b: parseInt(hex.slice(4, 6), 16) / 255,
+  }
+}
+
+function relativeLuminance({ r, g, b }) {
+  const values = [r, g, b].map(channel => channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+  return (0.2126 * values[0]) + (0.7152 * values[1]) + (0.0722 * values[2])
 }
 
 function renderIssues(analysis) {

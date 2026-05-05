@@ -4,6 +4,7 @@ node_modules/
 # Local runtime state
 .live-plans.json
 .prefs.json
+.design-sources.json
 
 # Synced/generated plan data
 plans/*.md
@@ -17,6 +18,8 @@ design-docs/
 # Electron/package artifacts
 dist/
 out/
+renderer/app.bundle.js
+renderer/app.css
 *.log
 .ui-artifacts/
 test-results/

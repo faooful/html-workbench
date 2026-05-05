@@ -1,0 +1,684 @@
+@import "@fontsource-variable/geist/index.css";
+@import "@fontsource-variable/geist-mono/index.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: #101010;
+    --foreground: #ededed;
+    --muted: #171717;
+    --muted-foreground: #a0a0a0;
+    --panel: #141414;
+    --panel-subtle: #171717;
+    --panel-strong: #202020;
+    --panel-hover: #252525;
+    --input: #1c1c1c;
+    --border: rgba(255, 255, 255, 0.08);
+    --ring: #6f7cff;
+    --accent: #6b7dff;
+    --accent-foreground: #ffffff;
+    --destructive: #ff646d;
+    --destructive-foreground: #ffffff;
+    --radius: 8px;
+    --shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+    --sample-background: #17191f;
+    --sample-panel: #1f222a;
+    --sample-border: rgba(255, 255, 255, 0.12);
+    --sample-text: rgba(255, 255, 255, 0.86);
+  }
+
+  [data-theme="light"] {
+    --background: #f7f7f5;
+    --foreground: #202020;
+    --muted: #f1f1ef;
+    --muted-foreground: #696969;
+    --panel: #fbfbfa;
+    --panel-subtle: #f1f1ef;
+    --panel-strong: #e7e7e4;
+    --panel-hover: #e0e0dc;
+    --input: #ffffff;
+    --border: rgba(0, 0, 0, 0.09);
+    --ring: #5865d8;
+    --shadow: 0 18px 46px rgba(0, 0, 0, 0.11);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: var(--background);
+    color: var(--foreground);
+    font: 13px/1.45 "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  }
+
+  button,
+  input,
+  textarea {
+    font: inherit;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--accent) 34%, transparent);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--muted-foreground) 46%, transparent);
+    background-clip: padding-box;
+  }
+}
+
+@layer components {
+  .app-shell {
+    display: grid;
+    grid-template-columns: 288px minmax(0, 1fr);
+    width: 100vw;
+    height: 100vh;
+    background: var(--background);
+  }
+
+  .app-shell.rail-hidden {
+    grid-template-columns: 0 minmax(0, 1fr);
+  }
+
+  .traffic-spacer {
+    height: 58px;
+    -webkit-app-region: drag;
+  }
+
+  .vault-rail {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-right: 1px solid var(--border);
+    background: var(--background);
+    -webkit-app-region: drag;
+  }
+
+  .rail-hidden .vault-rail {
+    transform: translateX(-100%);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .rail-body {
+    min-height: 0;
+    overflow: auto;
+    padding: 0 8px 12px;
+    -webkit-app-region: no-drag;
+  }
+
+  .section-label {
+    color: color-mix(in srgb, var(--muted-foreground) 74%, transparent);
+    font-size: 10px;
+    font-weight: 760;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .doc-row {
+    display: grid;
+    grid-template-columns: 15px minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+    width: 100%;
+    margin: 1px 0;
+    padding: 7px 7px 7px 22px;
+    border: 0;
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--foreground);
+    text-align: left;
+  }
+
+  .doc-row:hover {
+    background: var(--panel-hover);
+  }
+
+  .doc-row.active {
+    background: var(--panel-strong);
+  }
+
+  .workspace {
+    min-width: 0;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: 42px 34px minmax(0, 1fr) 24px;
+    background: var(--background);
+  }
+
+  .topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    padding: 0 12px;
+    -webkit-app-region: drag;
+  }
+
+  .rail-hidden .topbar {
+    padding-left: 92px;
+  }
+
+  .topbar-actions,
+  .topbar button,
+  .pane-toolbar button {
+    -webkit-app-region: no-drag;
+  }
+
+  .topbar-actions {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  .pane-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .pane-toolbar.single-pane-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pane-title {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 100%;
+    padding: 0 10px 0 14px;
+    border-right: 1px solid var(--border);
+  }
+
+  .pane-toolbar.single-pane-toolbar .pane-title {
+    border-right: 0;
+  }
+
+  .preview-segmented-tabs {
+    width: fit-content;
+    max-width: 100%;
+    gap: 2px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel-subtle);
+    padding: 2px;
+  }
+
+  .preview-segmented-tabs [role="tab"] {
+    min-width: 0;
+    height: 24px;
+    flex: 1 1 auto;
+    border: 0;
+    border-radius: 6px;
+    padding: 0 9px;
+    color: var(--muted-foreground);
+    font-size: 12px;
+    line-height: 1;
+    text-overflow: ellipsis;
+  }
+
+  .preview-segmented-tabs [role="tab"][data-state="active"] {
+    background: var(--panel-strong);
+    color: var(--foreground);
+    box-shadow: inset 0 0 0 1px var(--border);
+  }
+
+  .split-area {
+    min-height: 0;
+  }
+
+  .editor-shell {
+    height: 100%;
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    background: var(--background);
+  }
+
+  .line-numbers {
+    overflow: hidden;
+    border-right: 1px solid var(--border);
+    color: color-mix(in srgb, var(--muted-foreground) 72%, transparent);
+    padding: 22px 10px 80px 0;
+    text-align: right;
+    white-space: pre;
+    font: 13px/1.65 "Geist Mono Variable", monospace;
+    user-select: none;
+  }
+
+  .markdown-editor {
+    width: 100%;
+    height: 100%;
+    resize: none;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--foreground);
+    padding: 22px 22px 90px;
+    font: 13px/1.65 "Geist Mono Variable", monospace;
+    tab-size: 2;
+    white-space: pre;
+  }
+
+  .preview-scroll {
+    height: 100%;
+    overflow: auto;
+    background: var(--background);
+  }
+
+  .preview-view {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 24px 28px 76px;
+  }
+
+  .markdown-body h1 {
+    margin: 18px 0 18px;
+    font-size: 26px;
+    line-height: 1.08;
+    font-weight: 760;
+  }
+
+  .markdown-body h2 {
+    margin: 30px 0 12px;
+    font-size: 19px;
+    line-height: 1.2;
+    font-weight: 720;
+  }
+
+  .markdown-body h3 {
+    margin: 24px 0 10px;
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .markdown-body p,
+  .markdown-body li {
+    color: color-mix(in srgb, var(--foreground) 92%, transparent);
+    font-size: 14px;
+    line-height: 1.65;
+  }
+
+  .markdown-body p {
+    margin: 0 0 14px;
+  }
+
+  .markdown-body ul,
+  .markdown-body ol {
+    margin: 0 0 18px 22px;
+  }
+
+  .markdown-body code {
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--panel-subtle);
+    padding: 1px 5px;
+    font-family: "Geist Mono Variable", monospace;
+    font-size: 0.9em;
+  }
+
+  .summary-card,
+  .preview-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: transparent;
+    padding: 14px;
+  }
+
+  .related-contract-row {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel);
+    padding: 9px 10px;
+    text-align: left;
+    color: var(--foreground);
+  }
+
+  .related-contract-row:hover {
+    background: var(--panel-strong);
+  }
+
+  .related-contract-row span:first-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 650;
+  }
+
+  .related-contract-row span:last-child {
+    flex: none;
+    max-width: 50%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--muted-foreground);
+    font-size: 12px;
+  }
+
+  .component-canvas,
+  .component-controls {
+    min-width: 0;
+    border: 1px solid var(--sample-border);
+    border-radius: var(--radius);
+    background: var(--sample-background);
+    color: var(--sample-text);
+    padding: 14px;
+  }
+
+  .component-props {
+    min-width: 0;
+  }
+
+  .component-props > div {
+    min-width: 0;
+  }
+
+  .component-props code {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .contract-button {
+    min-height: 30px;
+    border: 1px solid var(--sample-border);
+    border-radius: 6px;
+    padding: 0 12px;
+    font-weight: 700;
+  }
+
+  .contract-chip {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--sample-border);
+    border-radius: 6px;
+    padding: 0 10px;
+    font-weight: 700;
+  }
+
+  .contract-definition-list {
+    display: grid;
+    gap: 7px;
+    min-width: 0;
+  }
+
+  .contract-definition-list div {
+    display: grid;
+    grid-template-columns: minmax(76px, max-content) minmax(0, 1fr);
+    gap: 10px;
+    align-items: baseline;
+    min-width: 0;
+    color: var(--muted-foreground);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .contract-definition-list strong {
+    color: var(--foreground);
+    font-weight: 700;
+  }
+
+  .contract-definition-list span {
+    min-width: 0;
+  }
+
+  .contract-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    border: 1px solid var(--sample-border);
+    border-radius: 999px;
+    background: var(--sample-panel);
+    padding: 0 9px;
+    color: var(--sample-text);
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .contract-badge-success {
+    border-color: rgba(34, 197, 94, 0.35);
+    background: rgba(34, 197, 94, 0.14);
+    color: #4ade80;
+  }
+
+  .contract-badge-warning {
+    border-color: rgba(245, 158, 11, 0.35);
+    background: rgba(245, 158, 11, 0.14);
+    color: #fbbf24;
+  }
+
+  .contract-badge-danger,
+  .contract-badge-destructive {
+    border-color: rgba(239, 68, 68, 0.42);
+    background: rgba(239, 68, 68, 0.16);
+    color: #f87171;
+  }
+
+  .contract-badge-muted,
+  .contract-badge-secondary {
+    color: var(--muted-foreground);
+  }
+
+  .contract-input {
+    width: 100%;
+    height: 34px;
+    border: 1px solid var(--sample-border);
+    border-radius: 6px;
+    background: var(--sample-background);
+    color: var(--sample-text);
+    padding: 0 10px;
+  }
+
+  .contract-surface-card,
+  .contract-modal,
+  .contract-sidebar,
+  .contract-toast {
+    min-width: 0;
+    border: 1px solid var(--sample-border);
+    border-radius: 8px;
+    background: var(--sample-panel);
+    color: var(--sample-text);
+  }
+
+  .contract-surface-card {
+    padding: 16px;
+  }
+
+  .contract-surface-card h3,
+  .contract-modal h3 {
+    margin: 8px 0 6px;
+    font-size: 16px;
+    font-weight: 760;
+  }
+
+  .contract-surface-card p,
+  .contract-modal p {
+    margin: 0;
+    color: color-mix(in srgb, var(--sample-text) 78%, transparent);
+    font-size: 12px;
+  }
+
+  .contract-modal {
+    max-width: 360px;
+    padding: 16px;
+    box-shadow: 0 16px 34px rgba(0, 0, 0, 0.22);
+  }
+
+  .contract-toolbar {
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    border: 1px solid var(--sample-border);
+    border-radius: 999px;
+    background: var(--sample-panel);
+    color: var(--sample-text);
+    padding: 8px;
+  }
+
+  .contract-sidebar {
+    display: grid;
+    gap: 6px;
+    width: min(240px, 100%);
+    padding: 12px;
+  }
+
+  .contract-sidebar div {
+    min-width: 0;
+    overflow: hidden;
+    border-radius: 6px;
+    padding: 7px 9px;
+    color: color-mix(in srgb, var(--sample-text) 74%, transparent);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .contract-sidebar .active {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    color: var(--sample-text);
+  }
+
+  .contract-table {
+    width: 100%;
+    min-width: 0;
+    border-collapse: separate;
+    border-spacing: 0;
+    overflow: hidden;
+    border: 1px solid var(--sample-border);
+    border-radius: 8px;
+    background: var(--sample-panel);
+    color: var(--sample-text);
+    font-size: 12px;
+  }
+
+  .contract-table th,
+  .contract-table td {
+    border-bottom: 1px solid var(--sample-border);
+    padding: 9px 10px;
+    text-align: left;
+  }
+
+  .contract-table th {
+    color: color-mix(in srgb, var(--sample-text) 62%, transparent);
+    font-size: 10px;
+    font-weight: 760;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .contract-table tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .contract-toast {
+    display: grid;
+    gap: 2px;
+    max-width: 320px;
+    padding: 12px 14px;
+    border-left: 3px solid var(--accent);
+  }
+
+  .contract-toast span {
+    color: color-mix(in srgb, var(--sample-text) 72%, transparent);
+    font-size: 12px;
+  }
+
+  .statusbar {
+    display: grid;
+    grid-template-columns: 130px minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: center;
+    border-top: 1px solid var(--border);
+    padding: 0 12px;
+    color: var(--muted-foreground);
+    font-size: 11px;
+  }
+
+  @media (max-width: 920px) {
+    .app-shell {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .vault-rail {
+      display: none;
+    }
+
+    .pane-toolbar {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .preview-pane,
+    .preview-title {
+      display: none;
+    }
+
+    .topbar {
+      grid-template-columns: minmax(0, 1fr) auto;
+      padding-left: 92px;
+    }
+
+    .hide-narrow {
+      display: none !important;
+    }
+  }
+
+  @media (max-width: 1180px) {
+    .topbar-actions .action-label {
+      display: none;
+    }
+
+    .topbar-actions .action-search {
+      width: 44px;
+      padding-inline: 0;
+    }
+
+    .topbar-actions .action-search kbd {
+      display: none;
+    }
+  }
+
+  @media (max-width: 1120px) {
+    .preview-segmented-tabs [role="tab"] {
+      padding-inline: 7px;
+      font-size: 11px;
+    }
+  }
+}
