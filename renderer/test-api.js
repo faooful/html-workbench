@@ -3,246 +3,166 @@
   if (!location.pathname.includes('__desktop-test') && !location.search.includes('testApi=1')) return
 
   const now = new Date().toISOString()
-  const store = new Map()
-  const persistedLinked = JSON.parse(localStorage.getItem('design-md-linked-sources') || '[]')
-  store.set('design-md-workbench/design.md', `---
-version: alpha
-name: DESIGN.md Workbench Design Language
-description: Local design contract for implementation agents.
-colors:
-  primary: "#5E6DD6"
-  secondary: "#8B949E"
-  neutral: "#17191F"
-  surface: "#20232B"
-  on-surface: "#F2F4F8"
-typography:
-  headline-md:
-    fontFamily: Geist
-    fontSize: 28px
-    fontWeight: 650
-    lineHeight: 1.12
-  body-md:
-    fontFamily: Geist
-    fontSize: 15px
-    fontWeight: 400
-    lineHeight: 1.6
-rounded:
-  sm: 6px
-  md: 10px
-spacing:
-  sm: 8px
-  md: 16px
-components:
-  button-primary:
-    backgroundColor: "{colors.primary}"
-    textColor: "{colors.on-surface}"
-    typography: "{typography.body-md}"
-    rounded: "{rounded.sm}"
-    height: 32px
-  input-field:
-    backgroundColor: "{colors.surface}"
-    textColor: "{colors.on-surface}"
-    rounded: "{rounded.sm}"
-    padding: 8px
----
+  const repoSourceMap = {
+    anchors: [
+      { path: 'tokens.md', type: 'design-doc', reason: 'Agent/design guidance markdown', selected: true },
+      { path: 'components.md', type: 'design-doc', reason: 'Agent/design guidance markdown', selected: true },
+      { path: 'src/gui/studio/UserInsights.tsx', type: 'ui-source', reason: 'Likely rendered UI surface', selected: true },
+      { path: 'src/core/components/ui/badge.tsx', type: 'component', reason: 'Reusable UI component source', selected: true },
+      { path: 'tailwind.css', type: 'theme', reason: 'Theme or token source', selected: true },
+    ],
+  }
+  const linkedRepos = [{ id: 'mock-repo', name: 'accidental-design-system', path: '/mock/accidental-design-system', builtIn: true, createdAt: now }]
 
-# DESIGN.md Workbench Design Language
+  function repoFor(repoId) {
+    return linkedRepos.find(repo => repo.id === repoId) || linkedRepos[0]
+  }
 
-## Overview
-
-This document teaches coding agents how to apply the product's design language when implementing UI.
-
-## Colors
-
-Primary blue drives action, neutral panels hold editor and preview surfaces.
-
-## Typography
-
-The app should feel like a focused local document workspace: quiet, precise, and useful.
-
-## Layout
-
-Dense split panes keep the markdown contract and rendered output visible together.
-
-## Components
-
-Buttons should stay compact, high contrast, and clear about primary vs secondary actions.
-
-## Do's and Don'ts
-
-- Read this design.md before changing UI.
-- Reuse documented tokens and component patterns.
-- Ask before inventing a new visual pattern.
-`)
-  store.set('marketing-site/design.md', `# Marketing Site Design
-
-## Purpose
-
-Document the public website design language.
-
-## Tokens
-
-- Accent: #2ABBF7
-- Background: #0F1117
-- Text: #F6F7FB
-
-## Components
-
-### Link Button
-
-Variants: Primary, Secondary
-Sizes: Small, Medium
-States: Default, Disabled
-`)
-  store.set('BitsApp/bits.md', `---
-name: Bits Chat & Workspace
-description: Workspace-level design guidance.
----
-
-# Bits Chat & Workspace
-
-## Workspace
-
-This file documents chat, panes, and streaming behavior. Component primitives live in components.md.
-`)
-  store.set('BitsApp/components.md', `---
-name: Bits Primitive Components
----
-
-# Bits Primitive Components
-
-## Gotchas
-
-Primitive UI wrappers live at \`@bits/gui/core/components/ui/button.tsx\`, \`@bits/gui/core/components/ui/input.tsx\`, \`@bits/gui/core/components/ui/badge.tsx\`, \`@bits/gui/core/components/ui/dropdown-menu.tsx\`, and \`@bits/gui/core/components/ui/command.tsx\`.
-
-Use \`Button\` for primary actions, destructive actions, secondary outline actions, and text links.
-Use \`Input\` for default, focus, error, and disabled states.
-Use \`Empty\`, \`Skeleton\`, and \`Spinner\` for loading and zero-state surfaces.
-`)
-
-  const linkedSources = persistedLinked
-  linkedSources.forEach(source => {
-    if (source.id === 'mock' && !store.has('linked/mock/tokens.md')) {
-      addMockLinkedFolderFiles()
+  function row(type, name, value, count, files, category, extra = {}) {
+    return {
+      id: `${type}-${name}-${value}`.replace(/\W+/g, '-'),
+      type,
+      name,
+      value,
+      count,
+      files,
+      occurrences: extra.occurrences || [],
+      category,
+      metadata: extra.metadata || {},
     }
-  })
-
-  function persistLinkedSources() {
-    localStorage.setItem('design-md-linked-sources', JSON.stringify(linkedSources))
   }
 
-  function addMockLinkedFolderFiles() {
-    store.set('linked/mock/tokens.md', `---
-name: External Tokens
-colors:
-  primary: "#33AAFF"
-typography:
-  body-md:
-    fontFamily: Geist
-    fontSize: 15px
-    fontWeight: 400
-    lineHeight: 1.6
----
-
-# External Tokens
-
-## Overview
-
-This file is read from a linked design folder.
-`)
+  function rowsForDefaultRepo() {
+    return [
+      row('Component', 'Badge', 'Badge from @/src/core/components/ui/badge', 4, ['src/gui/studio/UserInsights.tsx'], 'Used component', { metadata: { importPath: '@/src/core/components/ui/badge', sourceFile: 'src/core/components/ui/badge.tsx', definitionFiles: ['src/core/components/ui/badge.tsx'], previewable: true } }),
+      row('Component', 'UserAvatar', 'UserAvatar from @/src/gui/studio/components/UserAvatar', 2, ['src/gui/studio/UserInsights.tsx'], 'Used component', { metadata: { importPath: '@/src/gui/studio/components/UserAvatar', sourceFile: 'src/gui/studio/components/UserAvatar.tsx', definitionFiles: ['src/gui/studio/components/UserAvatar.tsx'], previewable: true } }),
+      row('Component', 'DropdownMenu', 'DropdownMenu from src/core/components/ui/dropdown-menu.tsx', 1, ['src/gui/studio/UserInsights.tsx'], 'Used component', { metadata: { importPath: '@/src/core/components/ui/dropdown-menu', sourceFile: 'src/core/components/ui/dropdown-menu.tsx', definitionFiles: ['src/core/components/ui/dropdown-menu.tsx'], previewable: true } }),
+      row('Component', 'DefinedOnlyCard', 'DefinedOnlyCard from src/core/components/DefinedOnlyCard.tsx', 0, [], 'Defined component', { metadata: { sourceFile: 'src/core/components/DefinedOnlyCard.tsx', definitionFiles: ['src/core/components/DefinedOnlyCard.tsx'], previewable: true, status: 'defined-unreferenced' } }),
+      row('Icon', 'CheckIcon', 'lucide-react', 6, ['src/gui/studio/UserInsights.tsx'], 'Icon', { metadata: { importPath: 'lucide-react', kind: 'icon-import' } }),
+      row('Icon', 'DatadogLogo', 'src/assets/icons/datadog-logo.svg', 0, [], 'SVG asset', { metadata: { sourceFiles: ['src/assets/icons/datadog-logo.svg'], kind: 'svg-asset', svg: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2l8 5v10l-8 5-8-5V7z"/></svg>' } }),
+      row('Token', '--gui-card-bg', '--gui-card-bg', 3, ['components.md', 'tailwind.css'], 'CSS variable'),
+      row('Token', '--background', '--background', 2, ['tokens.md', 'tailwind.css'], 'CSS variable'),
+      row('Color', '#5E6DD6', '#5E6DD6', 4, ['tailwind.css', 'src/gui/studio/UserInsights.tsx'], 'Color', {
+        metadata: { breakdown: { 'token-declaration': 2, 'direct-usage': 1, documentation: 1 }, tokenNames: ['--brand-primary'] },
+        occurrences: [
+          { file: 'tailwind.css', line: 12, kind: 'token-declaration', text: '--brand-primary: #5E6DD6;' },
+          { file: 'src/gui/studio/UserInsights.tsx', line: 88, kind: 'direct-usage', text: 'style={{ color: "#5E6DD6" }}' },
+        ],
+      }),
+      row('Color', '#ffffff', '#ffffff', 3, ['src/gui/studio/UserInsights.tsx'], 'Color', {
+        metadata: { breakdown: { 'direct-usage': 3 } },
+        occurrences: [{ file: 'src/gui/studio/UserInsights.tsx', line: 91, kind: 'direct-usage', text: '<Badge className="bg-green-600 text-white" />' }],
+      }),
+      row('Class', 'bg-card', 'bg-card', 7, ['src/gui/studio/UserInsights.tsx'], 'Visual'),
+      row('Class', 'rounded-lg border border-transparent bg-card p-4 shadow-card', 'rounded-lg border border-transparent bg-card p-4 shadow-card', 5, ['src/gui/studio/UserInsights.tsx'], 'Repeated recipe'),
+      row('File', 'tokens.md', 'The dark theme base is chromatic (purple-tinted), NOT neutral black.', 1, ['tokens.md'], 'Guidance', { metadata: { section: 'Gotchas' } }),
+      row('File', '<Badge className="bg-green-600 text-white">', '<Badge className="bg-green-600 text-white">', 1, ['components.md'], 'Anti-pattern', { metadata: { instead: '<Badge variant="success">' } }),
+    ]
   }
 
-  function docProject(filename) {
-    if (filename.startsWith('linked/mock/')) return 'external-design'
-    return filename.split('/')[0]
-  }
-
-  function docDisplayPath(filename) {
-    if (filename.startsWith('linked/mock/')) return filename.replace('linked/mock/', '')
-    return filename
-  }
-
-  function docs() {
-    return [...store.entries()].map(([filename, content]) => ({
-      filename,
-      displayPath: docDisplayPath(filename),
-      kind: 'design-doc',
-      title: content.match(/^name:\s*"?([^"\n]+)"?/m)?.[1] || content.match(/^#\s+(.+)$/m)?.[1] || filename,
-      repo: docProject(filename),
-      project: docProject(filename),
-      path: `/mock/design-docs/${filename}`,
-      modified: now,
-      created: now,
-      source: filename.startsWith('linked/mock/') ? 'linked-folder' : 'design-doc',
-      sourceName: filename.startsWith('linked/mock/') ? 'external-design' : docProject(filename),
-      sourceRoot: filename.startsWith('linked/mock/') ? '/mock/external-design' : '/mock/design-docs',
-      linked: filename.startsWith('linked/mock/'),
-      status: content.startsWith('---\n') ? 'ready' : 'needs_structure',
-      readiness: { state: content.startsWith('---\n') ? 'ready' : 'needs_structure', warnings: [] },
-      summary: content.slice(0, 240),
-    }))
+  function resultFor(repo, sourceMap, overrides = {}) {
+    const inventoryRows = overrides.inventoryRows || rowsForDefaultRepo()
+    return {
+      repo,
+      sourceMap,
+      inventoryRows,
+      summary: {
+        scannedFiles: sourceMap.anchors.filter(anchor => anchor.selected !== false).length,
+        colors: inventoryRows.filter(item => item.type === 'Color').length,
+        cssVariables: inventoryRows.filter(item => item.type === 'Token').length,
+        tailwindClasses: inventoryRows.filter(item => item.type === 'Class').length,
+        componentImports: inventoryRows.filter(item => item.type === 'Component').length,
+        icons: inventoryRows.filter(item => item.type === 'Icon').length,
+        componentDefinitions: inventoryRows.filter(item => item.type === 'Component' && item.metadata?.definitionFiles?.length).length,
+        unreferencedComponents: inventoryRows.filter(item => item.type === 'Component' && item.count === 0).length,
+        unresolvedComponents: inventoryRows.filter(item => item.type === 'Component' && item.metadata?.unresolved).length,
+        guidanceRules: inventoryRows.filter(item => item.category === 'Guidance').length,
+        antiPatterns: inventoryRows.filter(item => item.category === 'Anti-pattern').length,
+        smells: inventoryRows.filter(item => item.category === 'Style smell').length,
+      },
+      colors: [],
+      cssVariables: [],
+      tailwindClasses: [],
+      componentImports: [],
+      repeatedPatterns: [],
+      guidanceRules: [],
+      antiPatterns: [],
+      smells: [],
+      missingContext: [],
+    }
   }
 
   window.designAPI = {
-    getDesignDocs: async () => docs(),
-    getDesignDocContent: async filename => store.get(filename) || null,
-    getDesignDocPath: async filename => `/mock/design-docs/${filename}`,
-    revealDesignDoc: async filename => store.has(filename),
-    saveDesignDoc: async (filename, content) => {
-      store.set(filename, content)
-      return filename
+    getLinkedRepos: async () => linkedRepos,
+    linkRepo: async () => {
+      const additions = [
+        { id: 'bits-repo', name: 'bits', path: '/mock/bits', builtIn: false, createdAt: now },
+        { id: 'web-repo', name: 'web-ui', path: '/mock/web-ui', builtIn: false, createdAt: now },
+      ]
+      for (const item of additions) {
+        if (!linkedRepos.find(repo => repo.id === item.id)) linkedRepos.push(item)
+      }
+      return additions[0]
     },
-    createDesignDoc: async (project, title) => {
-      const cleanProject = String(project || 'local').toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'local'
-      const rawTitle = String(title || 'DESIGN.md').trim()
-      const hasPathIntent = /[\\/]/.test(rawTitle) || /\.md$/i.test(rawTitle)
-      const cleanTitle = rawTitle.toLowerCase().replace(/[^a-z0-9./_-]+/g, '-').replace(/^\/+/, '') || 'DESIGN.md'
-      const filename = hasPathIntent
-        ? `${cleanProject}/${cleanTitle.endsWith('.md') ? cleanTitle : `${cleanTitle}/DESIGN.md`}`
-        : `${cleanProject}/${cleanTitle.replace(/[^a-z0-9]+/g, '-')}.md`
-      const parts = filename.split('/')
-      const stem = parts[parts.length - 2] || parts[parts.length - 1].replace(/\.md$/i, '')
-      const displayName = stem.split(/[-_\s]+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'Design'
-      store.set(filename, `---\nversion: alpha\nname: ${displayName} Design\ncolors:\n  primary: "#5E6DD6"\ntypography:\n  body-md:\n    fontFamily: Geist\n    fontSize: 15px\n    fontWeight: 400\n    lineHeight: 1.6\ncomponents:\n  button-primary:\n    backgroundColor: "{colors.primary}"\n    textColor: "#ffffff"\n---\n\n# ${displayName} Design\n\n## Overview\n\nDescribe the product direction.\n\n## Components\n\nDocument important component behavior.\n`)
-      return filename
-    },
-    linkDesignFolder: async () => {
-      const source = { id: 'mock', name: 'external-design', path: '/mock/external-design' }
-      if (!linkedSources.find(item => item.id === source.id)) linkedSources.push(source)
-      persistLinkedSources()
-      addMockLinkedFolderFiles()
-      return source
-    },
-    getDesignSources: async () => linkedSources,
-    refreshDesignFolders: async () => docs(),
-    unlinkDesignFolder: async sourceId => {
-      const index = linkedSources.findIndex(item => item.id === sourceId)
-      if (index >= 0) linkedSources.splice(index, 1)
-      persistLinkedSources()
+    unlinkRepo: async repoId => {
+      const index = linkedRepos.findIndex(item => item.id === repoId && !item.builtIn)
+      if (index >= 0) linkedRepos.splice(index, 1)
       return true
     },
-    renameDesignDoc: async (filename, nextFilename) => {
-      const content = store.get(filename)
-      if (!content) return null
-      const next = nextFilename.endsWith('.md') ? nextFilename : `${nextFilename}.md`
-      store.delete(filename)
-      store.set(next, content)
-      return next
+    suggestRepoSources: async repoId => {
+      const repo = repoFor(repoId)
+      if (repo.id === 'web-repo') {
+        return {
+          repo,
+          anchors: [
+            { path: 'src/components/Button.tsx', type: 'component', reason: 'Reusable UI component source', selected: true },
+            { path: 'src/app/dashboard/page.tsx', type: 'ui-source', reason: 'Likely rendered UI surface', selected: true },
+            { path: 'src/styles/theme.css', type: 'theme', reason: 'Theme or token source', selected: true },
+          ],
+          generatedAt: now,
+        }
+      }
+      return { repo, ...repoSourceMap, generatedAt: now }
     },
-    deleteDesignDoc: async filename => store.delete(filename),
-    onDesignDocsUpdated: () => () => {},
-    lintDesignDoc: async content => ({
-      ok: true,
-      summary: { errors: 0, warnings: content.includes('broken-ref') ? 1 : 0, infos: 1 },
-      findings: content.includes('broken-ref') ? [{ severity: 'warning', path: 'components.button', message: 'Unresolved token reference {colors.broken-ref}.' }] : [],
-      tailwindConfig: { success: true, data: { theme: { extend: { colors: { primary: '#5E6DD6' } } } } },
-      dtcg: { success: true, data: { color: { primary: { $value: '#5E6DD6', $type: 'color' } } } },
-    }),
-    exportDesignDoc: async (content, format) => ({
-      ok: true,
-      data: format === 'tailwind'
-        ? { theme: { extend: { colors: { primary: '#5E6DD6' } } } }
-        : { color: { primary: { $value: '#5E6DD6', $type: 'color' } } },
-    }),
+    scanRepoDesignInventory: async (repoId, sourceMap = repoSourceMap) => {
+      const repo = repoFor(repoId)
+      const map = sourceMap?.anchors ? sourceMap : await window.designAPI.suggestRepoSources(repoId)
+      if (repo.id === 'web-repo') {
+        return resultFor(repo, map, {
+          inventoryRows: [
+            row('Component', 'Button', 'Button from @/components/Button', 12, ['src/app/dashboard/page.tsx'], 'Used component', { metadata: { importPath: '@/components/Button', sourceFile: 'src/components/Button.tsx', definitionFiles: ['src/components/Button.tsx'], previewable: true } }),
+            row('Icon', 'SettingsIcon', 'src/icons/settings.svg', 3, ['src/app/dashboard/page.tsx'], 'SVG asset', { metadata: { sourceFiles: ['src/icons/settings.svg'], kind: 'svg-asset', svg: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5" fill="currentColor"/></svg>' } }),
+            row('Token', '--brand-primary', '--brand-primary', 4, ['src/styles/theme.css'], 'CSS variable'),
+            row('Color', '--surface-900', '#101010', 2, ['src/styles/theme.css'], 'Color', { metadata: { tokenNames: ['--surface-900'] } }),
+            row('Class', 'flex items-center gap-2', 'flex items-center gap-2', 9, ['src/app/dashboard/page.tsx'], 'Repeated recipe'),
+            row('File', 'src/styles/theme.css', 'src/styles/theme.css', 1, ['src/styles/theme.css'], 'Theme source'),
+          ],
+        })
+      }
+      return resultFor(repo, map)
+    },
+    getComponentPreviewCandidates: async (_repoId, scanResult) => {
+      return (scanResult?.inventoryRows || []).filter(row => row.type === 'Component').map(row => ({
+        id: row.id,
+        name: row.name,
+        importPath: row.metadata?.importPath || '',
+        count: row.count,
+        files: row.files || [],
+        status: 'pending',
+      }))
+    },
+    renderComponentPreview: async (_repoId, row) => {
+      if (row.name === 'UserAvatar') {
+        return { status: 'Needs example', error: 'Preview needs user data props.', files: row.files || [] }
+      }
+      if (row.name === 'DropdownMenu') {
+        return { status: 'Needs interaction', error: 'This primitive needs an open-state example.', files: row.files || [] }
+      }
+      return {
+        status: 'Preview loading',
+        html: `<html><body style="margin:0;display:grid;place-items:center;height:100%;background:transparent;color:#ededed;font:13px system-ui"><button style="border:1px solid #454545;border-radius:6px;background:#202020;color:#ededed;padding:8px 12px">${row.name}</button><script>requestAnimationFrame(() => parent.postMessage({ type: 'component-preview-status', componentId: ${JSON.stringify(row.id)}, status: 'Preview' }, '*'))</script></body></html>`,
+        files: row.files || [],
+      }
+    },
   }
 })()

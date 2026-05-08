@@ -1,74 +1,34 @@
-# DESIGN.md Workbench
+# Accidental Design System
 
-DESIGN.md Workbench is a local-first Electron app for authoring, reviewing, and exporting `DESIGN.md` design contracts for AI implementation agents. It keeps the markdown source and rendered previews side by side so humans can judge the visual system before agents apply it in code.
+Accidental Design System is a local-first Electron app for inspecting the design system that already exists inside a repo. Link one folder, scan suggested sources, and browse the discovered components, tokens, colors, classes, files, and guidance in one dense table.
+
+The app is read-only. It does not call an LLM, generate code, or write into linked repos.
 
 ## What It Does
 
-- Stores local design contracts under `design-docs/`.
-- Links external folders of `.md` design contracts without copying files.
-- Provides a split markdown editor and live preview.
-- Renders document, token, component, and issue views from YAML front matter and markdown.
-- Supports starter YAML blocks for tokens, typography, components, and agent rules.
-- Lints contracts with `@google/design.md` when available.
-- Exports token JSON and Tailwind config to the clipboard.
+- Links local repos and remembers them in ignored local state.
+- Suggests likely design docs, theme files, component folders, and UI surfaces.
+- Scans one selected repo at a time; inventories are never merged across repos.
+- Shows a table of discovered design-system facts with filters for `Components`, `Tokens`, `Colors`, `Classes`, and `Files`.
+- Opens row-level evidence in a right-side detail panel with files, counts, line matches, import paths, color context, and suggested alternatives when available.
+- Keeps source include/exclude controls behind `Scan Settings`.
+- Copies a concise summary for humans or agents when needed.
 
 ## Tech Stack
 
 - Electron 41 for the desktop shell.
-- Node.js main process for local file access, folder linking, IPC, and file watching.
+- Node.js main process for local repo linking, source suggestion, static scanning, and IPC.
 - React, Tailwind CSS, and Radix/shadcn-style primitives for the renderer.
-- `marked` for markdown rendering.
-- `js-yaml` for front matter and starter block merging.
 - Playwright for visual and interaction coverage.
 
-## Project Layout
-
-```text
-design-md-workbench/
-├── main.js                 # Electron main process and design-doc IPC
-├── preload.js              # Context bridge exposing window.designAPI
-├── package.json            # npm scripts and dependencies
-├── renderer/
-│   ├── index.html          # Renderer shell
-│   ├── test-api.js         # Browser-only mock designAPI for Playwright
-│   └── src/
-│       ├── App.jsx         # React workbench UI
-│       ├── styles.css      # Tailwind entrypoint and app CSS
-│       └── components/     # Local UI primitives
-├── tests/
-│   └── ui.visual.spec.js   # Playwright visual/interaction tests
-└── design-docs/            # Local runtime design contracts, ignored by Git
-```
-
-Generated renderer assets are ignored by Git:
-
-```text
-renderer/app.css
-renderer/app.bundle.js
-```
-
-## Setup
-
-Install dependencies:
+## Running
 
 ```sh
 npm install
-```
-
-## Running The App
-
-Start the Electron app:
-
-```sh
 npm start
 ```
 
-On launch, the app:
-
-1. Ensures `design-docs/` exists.
-2. Creates a starter `design-md-workbench/design.md` if no local starter exists.
-3. Opens the React workbench.
-4. Watches local and linked design folders for `.md` changes.
+On launch, the current repo is available as a dogfood target. Use **Link repo** to add another local project.
 
 ## Scripts
 
@@ -78,20 +38,22 @@ npm run test:ui
 npm run test:visual
 ```
 
-`npm run build:renderer` generates the ignored renderer CSS and JavaScript bundle. The test scripts build the renderer first, then load `renderer/index.html?testApi=1` with the browser-only mock API.
+Generated renderer assets are ignored by Git:
+
+```text
+renderer/app.css
+renderer/app.bundle.js
+```
 
 ## Runtime State
 
 These files are generated locally and ignored by Git:
 
 ```text
-.design-sources.json       # Linked design folders
-design-docs/               # Local design contracts
+.design-repos.json         # Linked repos and source-map choices
 renderer/app.css           # Generated Tailwind output
 renderer/app.bundle.js     # Generated React bundle
 .ui-artifacts/             # Test screenshots
 test-results/
 playwright-report/
 ```
-
-Existing ignored plan-review data from earlier versions can remain on disk, but the app no longer reads or exposes it.

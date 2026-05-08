@@ -1,23 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('designAPI', {
-  getDesignDocs: () => ipcRenderer.invoke('get-design-docs'),
-  getDesignDocContent: filename => ipcRenderer.invoke('get-design-doc-content', filename),
-  saveDesignDoc: (filename, content) => ipcRenderer.invoke('save-design-doc', filename, content),
-  createDesignDoc: (project, title) => ipcRenderer.invoke('create-design-doc', project, title),
-  renameDesignDoc: (filename, nextFilename) => ipcRenderer.invoke('rename-design-doc', filename, nextFilename),
-  deleteDesignDoc: filename => ipcRenderer.invoke('delete-design-doc', filename),
-  getDesignDocPath: filename => ipcRenderer.invoke('get-design-doc-path', filename),
-  revealDesignDoc: filename => ipcRenderer.invoke('reveal-design-doc', filename),
-  linkDesignFolder: () => ipcRenderer.invoke('link-design-folder'),
-  getDesignSources: () => ipcRenderer.invoke('get-design-sources'),
-  unlinkDesignFolder: sourceId => ipcRenderer.invoke('unlink-design-folder', sourceId),
-  refreshDesignFolders: () => ipcRenderer.invoke('refresh-design-folders'),
-  lintDesignDoc: content => ipcRenderer.invoke('lint-design-doc', content),
-  exportDesignDoc: (content, format) => ipcRenderer.invoke('export-design-doc', content, format),
-  onDesignDocsUpdated: cb => {
-    const handler = (_, data) => cb(data)
-    ipcRenderer.on('design-docs:updated', handler)
-    return () => ipcRenderer.removeListener('design-docs:updated', handler)
-  },
+  getLinkedRepos: () => ipcRenderer.invoke('get-linked-repos'),
+  linkRepo: () => ipcRenderer.invoke('link-repo'),
+  unlinkRepo: repoId => ipcRenderer.invoke('unlink-repo', repoId),
+  suggestRepoSources: repoId => ipcRenderer.invoke('suggest-repo-sources', repoId),
+  scanRepoDesignInventory: (repoId, sourceMap) => ipcRenderer.invoke('scan-repo-design-inventory', repoId, sourceMap),
+  getComponentSource: (repoId, componentRow) => ipcRenderer.invoke('get-component-source', repoId, componentRow),
+  getDevServerInfo: repoId => ipcRenderer.invoke('get-dev-server-info', repoId),
 })

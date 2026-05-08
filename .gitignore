@@ -5,6 +5,7 @@ node_modules/
 .live-plans.json
 .prefs.json
 .design-sources.json
+.design-repos.json
 
 # Synced/generated plan data
 plans/*.md
