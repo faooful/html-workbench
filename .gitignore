@@ -6,7 +6,6 @@ node_modules/
 .prefs.json
 .design-sources.json
 .design-repos.json
-.html-workbench.json
 
 # Synced/generated plan data
 plans/*.md

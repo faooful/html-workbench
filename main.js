@@ -1,32 +1,18 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
 
-const CONFIG_FILE = path.join(__dirname, '.html-workbench.json')
-
 let mainWindow
-
-function safeJsonRead(filepath, fallback) {
-  try {
-    if (!fs.existsSync(filepath)) return fallback
-    return JSON.parse(fs.readFileSync(filepath, 'utf8'))
-  } catch (_) {
-    return fallback
-  }
-}
-
-function safeJsonWrite(filepath, data) {
-  try {
-    fs.writeFileSync(filepath, JSON.stringify(data, null, 2), 'utf8')
-    return true
-  } catch (_) {
-    return false
-  }
-}
 
 function extractHtmlTitle(content) {
   const match = String(content || '').match(/<title[^>]*>([^<]+)<\/title>/i)
   return match ? match[1].trim() : null
+}
+
+function getLibraryDir() {
+  const dir = path.join(app.getPath('userData'), 'html-files')
+  fs.mkdirSync(dir, { recursive: true })
+  return dir
 }
 
 function createWindow() {
@@ -57,25 +43,20 @@ app.on('window-all-closed', () => {
 })
 
 ipcMain.handle('get-watch-dir', () => {
-  return safeJsonRead(CONFIG_FILE, {}).watchDir || null
+  try { return getLibraryDir() } catch (_) { return null }
 })
 
-ipcMain.handle('set-watch-dir', (_, dirPath) => {
-  const config = safeJsonRead(CONFIG_FILE, {})
-  config.watchDir = dirPath
-  return safeJsonWrite(CONFIG_FILE, config)
+ipcMain.handle('set-watch-dir', () => {
+  return true
 })
 
 ipcMain.handle('choose-directory', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openDirectory'],
-    title: 'Choose a folder to watch for HTML files',
-  })
-  return result.canceled ? null : result.filePaths[0]
+  try { return getLibraryDir() } catch (_) { return null }
 })
 
-ipcMain.handle('list-html-files', (_, dirPath) => {
+ipcMain.handle('list-html-files', () => {
   try {
+    const dirPath = getLibraryDir()
     if (!dirPath || !fs.existsSync(dirPath)) return []
     return fs.readdirSync(dirPath)
       .filter(name => name.endsWith('.html') && !name.startsWith('.'))
@@ -109,8 +90,9 @@ ipcMain.handle('reveal-in-finder', (_, filePath) => {
   return true
 })
 
-ipcMain.handle('create-html-file', (_, dirPath, title) => {
+ipcMain.handle('create-html-file', (_, _dirPath, title) => {
   try {
+    const dirPath = getLibraryDir()
     const slug = String(title || 'untitled')
       .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64) || 'untitled'
     let filename = `${slug}.html`

@@ -5,7 +5,7 @@
   const mockDir = '/mock/html-artifacts'
   const now = Date.now()
 
-  const mockFiles = [
+  let mockFiles = [
     {
       name: 'checkout-spec.html',
       path: `${mockDir}/checkout-spec.html`,
@@ -28,6 +28,10 @@
       title: null,
     },
   ]
+
+  if (new URLSearchParams(location.search).has('emptyLibrary')) {
+    mockFiles = []
+  }
 
   const mockContent = {
     [`${mockDir}/checkout-spec.html`]: `<!DOCTYPE html>
@@ -99,7 +103,15 @@
   window.htmlAPI = {
     listHtmlFiles:   async () => mockFiles,
     readFile:        async (path) => saved[path] || mockContent[path] || null,
-    writeFile:       async (path, content) => { saved[path] = content; return true },
+    writeFile:       async (path, content) => {
+      saved[path] = content
+      const file = mockFiles.find(f => f.path === path)
+      if (file) {
+        file.mtime = Date.now()
+        file.size = content.length
+      }
+      return true
+    },
     openInBrowser:   async () => true,
     revealInFinder:  async () => true,
     getWatchDir:     async () => mockDir,

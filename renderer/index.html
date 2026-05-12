@@ -12,10 +12,14 @@
 
     <aside id="vault-rail">
       <div id="traffic-spacer"></div>
+      <div id="rail-actions">
+        <button id="command-btn" class="toolbar-btn">Search <kbd>⌘K</kbd></button>
+        <button id="theme-btn" class="toolbar-btn">Light</button>
+      </div>
       <section class="vault-section">
         <div class="section-label rail-section-head">
           <span>Files</span>
-          <button id="new-doc-btn" class="icon-btn rail-new-btn" title="New HTML file" aria-label="New HTML file">＋</button>
+          <button id="new-doc-btn" class="icon-btn rail-new-btn" title="New blank file" aria-label="New blank file">＋</button>
         </div>
         <div id="doc-list"></div>
       </section>
@@ -25,13 +29,10 @@
       <header id="topbar">
         <div class="doc-title-wrap">
           <button id="sidebar-toggle" class="icon-btn" aria-label="Toggle sidebar">☰</button>
-          <div>
-            <h2 id="active-title">Untitled</h2>
-          </div>
+          <h2 id="active-title">Untitled</h2>
+          <button id="active-rename-btn" class="icon-btn" title="Rename file" aria-label="Rename file">✎</button>
         </div>
         <div id="topbar-actions">
-          <button id="command-btn" class="toolbar-btn">Search <kbd>⌘K</kbd></button>
-          <button id="theme-btn" class="toolbar-btn">Light</button>
           <button id="save-btn" class="toolbar-btn">Save</button>
           <button id="open-browser-btn" class="toolbar-btn accent">Open in browser</button>
           <div class="more-menu">
@@ -42,8 +43,6 @@
               <hr>
               <button id="rename-doc-btn" role="menuitem">Rename file</button>
               <button id="delete-doc-btn" role="menuitem">Delete file</button>
-              <hr>
-              <button id="choose-dir-btn" role="menuitem">Change watch folder…</button>
             </div>
           </div>
         </div>
@@ -74,9 +73,18 @@
       </div>
 
       <footer id="statusbar">
-        <span id="save-state">Ready</span>
-        <span id="stats">Lines: 0</span>
-        <span id="watch-dir-label"></span>
+        <div id="status-left">
+          <span id="save-state">Ready</span>
+          <span id="stats">Lines: 0</span>
+          <span id="watch-dir-label"></span>
+        </div>
+        <div id="save-controls">
+          <label class="autosave-toggle">
+            <input id="autosave-checkbox" type="checkbox" />
+            <span>Autosave</span>
+          </label>
+          <button id="autosave-delay-btn" type="button" title="Cycle autosave interval">3s</button>
+        </div>
       </footer>
     </main>
   </div>
