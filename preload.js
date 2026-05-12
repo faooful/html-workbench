@@ -1,11 +1,15 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
-contextBridge.exposeInMainWorld('designAPI', {
-  getLinkedRepos: () => ipcRenderer.invoke('get-linked-repos'),
-  linkRepo: () => ipcRenderer.invoke('link-repo'),
-  unlinkRepo: repoId => ipcRenderer.invoke('unlink-repo', repoId),
-  suggestRepoSources: repoId => ipcRenderer.invoke('suggest-repo-sources', repoId),
-  scanRepoDesignInventory: (repoId, sourceMap) => ipcRenderer.invoke('scan-repo-design-inventory', repoId, sourceMap),
-  getComponentSource: (repoId, componentRow) => ipcRenderer.invoke('get-component-source', repoId, componentRow),
-  getDevServerInfo: repoId => ipcRenderer.invoke('get-dev-server-info', repoId),
+contextBridge.exposeInMainWorld('htmlAPI', {
+  listHtmlFiles:  (dirPath)             => ipcRenderer.invoke('list-html-files', dirPath),
+  readFile:       (filePath)            => ipcRenderer.invoke('read-file', filePath),
+  writeFile:      (filePath, content)   => ipcRenderer.invoke('write-file', filePath, content),
+  openInBrowser:  (filePath)            => ipcRenderer.invoke('open-in-browser', filePath),
+  revealInFinder: (filePath)            => ipcRenderer.invoke('reveal-in-finder', filePath),
+  getWatchDir:    ()                    => ipcRenderer.invoke('get-watch-dir'),
+  setWatchDir:    (dirPath)             => ipcRenderer.invoke('set-watch-dir', dirPath),
+  chooseDirectory:()                    => ipcRenderer.invoke('choose-directory'),
+  createHtmlFile: (dirPath, title)      => ipcRenderer.invoke('create-html-file', dirPath, title),
+  deleteHtmlFile: (filePath)            => ipcRenderer.invoke('delete-html-file', filePath),
+  renameHtmlFile: (oldPath, newName)    => ipcRenderer.invoke('rename-html-file', oldPath, newName),
 })

@@ -1,41 +1,18 @@
 {
-  "name": "accidental-design-system",
+  "name": "html-workbench",
   "version": "1.0.0",
   "main": "main.js",
   "scripts": {
-    "start": "npm run build:renderer && electron .",
-    "build:renderer": "npm run build:css && npm run build:js",
-    "build:css": "tailwindcss -c tailwind.config.js -i renderer/src/styles.css -o renderer/app.css",
-    "build:js": "esbuild renderer/src/App.jsx --bundle --format=iife --global-name=DesignMdApp --outfile=renderer/app.bundle.js --jsx=automatic --loader:.js=jsx",
-    "test:ui": "npm run build:renderer && playwright test",
-    "test:visual": "npm run build:renderer && playwright test tests/ui.visual.spec.js",
-    "test:preview": "playwright test tests/ui.visual.spec.js --grep \"preview builder|node built-in|node.*named imports\""
+    "start": "electron ."
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "Local-first design system inspector for existing repos.",
+  "description": "Local-first HTML artifact workbench.",
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.8",
     "@fontsource-variable/geist-mono": "^5.2.7",
-    "@radix-ui/react-dialog": "^1.1.15",
-    "@radix-ui/react-slot": "^1.2.4",
-    "@radix-ui/react-tooltip": "^1.2.8",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "electron": "^41.3.0",
-    "less": "^4.6.4",
-    "lightningcss": "^1.32.0",
-    "lucide-react": "^1.14.0",
-    "react": "^19.2.5",
-    "react-dom": "^19.2.5",
-    "tailwind-merge": "^3.5.0"
+    "electron": "^41.3.0"
   },
-  "devDependencies": {
-    "@playwright/test": "^1.52.0",
-    "autoprefixer": "^10.5.0",
-    "esbuild": "latest",
-    "postcss": "^8.5.13",
-    "tailwindcss": "^3.4.17"
-  }
+  "devDependencies": {}
 }

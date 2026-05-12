@@ -1,168 +1,131 @@
 (function () {
-  if (window.designAPI) return
+  if (window.htmlAPI) return
   if (!location.pathname.includes('__desktop-test') && !location.search.includes('testApi=1')) return
 
-  const now = new Date().toISOString()
-  const repoSourceMap = {
-    anchors: [
-      { path: 'tokens.md', type: 'design-doc', reason: 'Agent/design guidance markdown', selected: true },
-      { path: 'components.md', type: 'design-doc', reason: 'Agent/design guidance markdown', selected: true },
-      { path: 'src/gui/studio/UserInsights.tsx', type: 'ui-source', reason: 'Likely rendered UI surface', selected: true },
-      { path: 'src/core/components/ui/badge.tsx', type: 'component', reason: 'Reusable UI component source', selected: true },
-      { path: 'tailwind.css', type: 'theme', reason: 'Theme or token source', selected: true },
-    ],
-  }
-  const linkedRepos = [{ id: 'mock-repo', name: 'accidental-design-system', path: '/mock/accidental-design-system', builtIn: true, createdAt: now }]
+  const mockDir = '/mock/html-artifacts'
+  const now = Date.now()
 
-  function repoFor(repoId) {
-    return linkedRepos.find(repo => repo.id === repoId) || linkedRepos[0]
-  }
-
-  function row(type, name, value, count, files, category, extra = {}) {
-    return {
-      id: `${type}-${name}-${value}`.replace(/\W+/g, '-'),
-      type,
-      name,
-      value,
-      count,
-      files,
-      occurrences: extra.occurrences || [],
-      category,
-      metadata: extra.metadata || {},
-    }
-  }
-
-  function rowsForDefaultRepo() {
-    return [
-      row('Component', 'Badge', 'Badge from @/src/core/components/ui/badge', 4, ['src/gui/studio/UserInsights.tsx'], 'Used component', { metadata: { importPath: '@/src/core/components/ui/badge', sourceFile: 'src/core/components/ui/badge.tsx', definitionFiles: ['src/core/components/ui/badge.tsx'], previewable: true } }),
-      row('Component', 'UserAvatar', 'UserAvatar from @/src/gui/studio/components/UserAvatar', 2, ['src/gui/studio/UserInsights.tsx'], 'Used component', { metadata: { importPath: '@/src/gui/studio/components/UserAvatar', sourceFile: 'src/gui/studio/components/UserAvatar.tsx', definitionFiles: ['src/gui/studio/components/UserAvatar.tsx'], previewable: true } }),
-      row('Component', 'DropdownMenu', 'DropdownMenu from src/core/components/ui/dropdown-menu.tsx', 1, ['src/gui/studio/UserInsights.tsx'], 'Used component', { metadata: { importPath: '@/src/core/components/ui/dropdown-menu', sourceFile: 'src/core/components/ui/dropdown-menu.tsx', definitionFiles: ['src/core/components/ui/dropdown-menu.tsx'], previewable: true } }),
-      row('Component', 'DefinedOnlyCard', 'DefinedOnlyCard from src/core/components/DefinedOnlyCard.tsx', 0, [], 'Defined component', { metadata: { sourceFile: 'src/core/components/DefinedOnlyCard.tsx', definitionFiles: ['src/core/components/DefinedOnlyCard.tsx'], previewable: true, status: 'defined-unreferenced' } }),
-      row('Icon', 'CheckIcon', 'lucide-react', 6, ['src/gui/studio/UserInsights.tsx'], 'Icon', { metadata: { importPath: 'lucide-react', kind: 'icon-import' } }),
-      row('Icon', 'DatadogLogo', 'src/assets/icons/datadog-logo.svg', 0, [], 'SVG asset', { metadata: { sourceFiles: ['src/assets/icons/datadog-logo.svg'], kind: 'svg-asset', svg: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2l8 5v10l-8 5-8-5V7z"/></svg>' } }),
-      row('Token', '--gui-card-bg', '--gui-card-bg', 3, ['components.md', 'tailwind.css'], 'CSS variable'),
-      row('Token', '--background', '--background', 2, ['tokens.md', 'tailwind.css'], 'CSS variable'),
-      row('Color', '#5E6DD6', '#5E6DD6', 4, ['tailwind.css', 'src/gui/studio/UserInsights.tsx'], 'Color', {
-        metadata: { breakdown: { 'token-declaration': 2, 'direct-usage': 1, documentation: 1 }, tokenNames: ['--brand-primary'] },
-        occurrences: [
-          { file: 'tailwind.css', line: 12, kind: 'token-declaration', text: '--brand-primary: #5E6DD6;' },
-          { file: 'src/gui/studio/UserInsights.tsx', line: 88, kind: 'direct-usage', text: 'style={{ color: "#5E6DD6" }}' },
-        ],
-      }),
-      row('Color', '#ffffff', '#ffffff', 3, ['src/gui/studio/UserInsights.tsx'], 'Color', {
-        metadata: { breakdown: { 'direct-usage': 3 } },
-        occurrences: [{ file: 'src/gui/studio/UserInsights.tsx', line: 91, kind: 'direct-usage', text: '<Badge className="bg-green-600 text-white" />' }],
-      }),
-      row('Class', 'bg-card', 'bg-card', 7, ['src/gui/studio/UserInsights.tsx'], 'Visual'),
-      row('Class', 'rounded-lg border border-transparent bg-card p-4 shadow-card', 'rounded-lg border border-transparent bg-card p-4 shadow-card', 5, ['src/gui/studio/UserInsights.tsx'], 'Repeated recipe'),
-      row('File', 'tokens.md', 'The dark theme base is chromatic (purple-tinted), NOT neutral black.', 1, ['tokens.md'], 'Guidance', { metadata: { section: 'Gotchas' } }),
-      row('File', '<Badge className="bg-green-600 text-white">', '<Badge className="bg-green-600 text-white">', 1, ['components.md'], 'Anti-pattern', { metadata: { instead: '<Badge variant="success">' } }),
-    ]
-  }
-
-  function resultFor(repo, sourceMap, overrides = {}) {
-    const inventoryRows = overrides.inventoryRows || rowsForDefaultRepo()
-    return {
-      repo,
-      sourceMap,
-      inventoryRows,
-      summary: {
-        scannedFiles: sourceMap.anchors.filter(anchor => anchor.selected !== false).length,
-        colors: inventoryRows.filter(item => item.type === 'Color').length,
-        cssVariables: inventoryRows.filter(item => item.type === 'Token').length,
-        tailwindClasses: inventoryRows.filter(item => item.type === 'Class').length,
-        componentImports: inventoryRows.filter(item => item.type === 'Component').length,
-        icons: inventoryRows.filter(item => item.type === 'Icon').length,
-        componentDefinitions: inventoryRows.filter(item => item.type === 'Component' && item.metadata?.definitionFiles?.length).length,
-        unreferencedComponents: inventoryRows.filter(item => item.type === 'Component' && item.count === 0).length,
-        unresolvedComponents: inventoryRows.filter(item => item.type === 'Component' && item.metadata?.unresolved).length,
-        guidanceRules: inventoryRows.filter(item => item.category === 'Guidance').length,
-        antiPatterns: inventoryRows.filter(item => item.category === 'Anti-pattern').length,
-        smells: inventoryRows.filter(item => item.category === 'Style smell').length,
-      },
-      colors: [],
-      cssVariables: [],
-      tailwindClasses: [],
-      componentImports: [],
-      repeatedPatterns: [],
-      guidanceRules: [],
-      antiPatterns: [],
-      smells: [],
-      missingContext: [],
-    }
-  }
-
-  window.designAPI = {
-    getLinkedRepos: async () => linkedRepos,
-    linkRepo: async () => {
-      const additions = [
-        { id: 'bits-repo', name: 'bits', path: '/mock/bits', builtIn: false, createdAt: now },
-        { id: 'web-repo', name: 'web-ui', path: '/mock/web-ui', builtIn: false, createdAt: now },
-      ]
-      for (const item of additions) {
-        if (!linkedRepos.find(repo => repo.id === item.id)) linkedRepos.push(item)
-      }
-      return additions[0]
+  const mockFiles = [
+    {
+      name: 'checkout-spec.html',
+      path: `${mockDir}/checkout-spec.html`,
+      mtime: now - 1000 * 60 * 5,
+      size: 4200,
+      title: 'Checkout Flow Spec',
     },
-    unlinkRepo: async repoId => {
-      const index = linkedRepos.findIndex(item => item.id === repoId && !item.builtIn)
-      if (index >= 0) linkedRepos.splice(index, 1)
+    {
+      name: 'api-latency-report.html',
+      path: `${mockDir}/api-latency-report.html`,
+      mtime: now - 1000 * 60 * 60 * 2,
+      size: 8100,
+      title: 'API Latency Report',
+    },
+    {
+      name: 'onboarding-design.html',
+      path: `${mockDir}/onboarding-design.html`,
+      mtime: now - 1000 * 60 * 60 * 24,
+      size: 3500,
+      title: null,
+    },
+  ]
+
+  const mockContent = {
+    [`${mockDir}/checkout-spec.html`]: `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Checkout Flow Spec</title>
+  <style>
+    body { font: 15px/1.6 system-ui; margin: 0; padding: 40px; max-width: 720px; color: #1a1a1a; }
+    h1 { font-size: 26px; margin: 0 0 24px; }
+    h2 { font-size: 18px; margin: 28px 0 12px; }
+    p { margin: 10px 0; color: #444; }
+  </style>
+</head>
+<body>
+  <h1>Checkout Flow Spec</h1>
+  <h2>Overview</h2>
+  <p>This document describes the checkout flow for the v2 redesign.</p>
+  <h2>States</h2>
+  <p>Cart → Address → Payment → Confirmation</p>
+</body>
+</html>`,
+    [`${mockDir}/api-latency-report.html`]: `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>API Latency Report</title>
+  <style>
+    body { font: 14px/1.5 system-ui; margin: 0; padding: 32px; color: #111; }
+    h1 { font-size: 22px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+    th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+    th { background: #f5f5f5; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>API Latency Report</h1>
+  <table>
+    <tr><th>Endpoint</th><th>p50</th><th>p95</th><th>p99</th></tr>
+    <tr><td>/api/checkout</td><td>42ms</td><td>180ms</td><td>842ms</td></tr>
+    <tr><td>/api/products</td><td>18ms</td><td>72ms</td><td>210ms</td></tr>
+  </table>
+</body>
+</html>`,
+    [`${mockDir}/onboarding-design.html`]: `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Onboarding Design</title>
+  <style>
+    body { font: 15px/1.6 system-ui; margin: 0; padding: 40px; background: #fafafa; }
+    .card { background: white; border-radius: 12px; padding: 32px; max-width: 480px; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+    h2 { margin: 0 0 12px; font-size: 22px; }
+    button { margin-top: 20px; padding: 10px 20px; background: #5E6DD6; color: white; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Welcome to Bits</h2>
+    <p>Get started by connecting your first repository.</p>
+    <button>Connect repository</button>
+  </div>
+</body>
+</html>`,
+  }
+
+  const saved = {}
+
+  window.htmlAPI = {
+    listHtmlFiles:   async () => mockFiles,
+    readFile:        async (path) => saved[path] || mockContent[path] || null,
+    writeFile:       async (path, content) => { saved[path] = content; return true },
+    openInBrowser:   async () => true,
+    revealInFinder:  async () => true,
+    getWatchDir:     async () => mockDir,
+    setWatchDir:     async () => true,
+    chooseDirectory: async () => mockDir,
+    createHtmlFile:  async (dir, title) => {
+      const name = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') + '.html'
+      const path = `${dir}/${name}`
+      const file = { name, path, mtime: Date.now(), size: 300, title }
+      mockFiles.unshift(file)
+      return { name, path }
+    },
+    deleteHtmlFile:  async (path) => {
+      const i = mockFiles.findIndex(f => f.path === path)
+      if (i >= 0) mockFiles.splice(i, 1)
       return true
     },
-    suggestRepoSources: async repoId => {
-      const repo = repoFor(repoId)
-      if (repo.id === 'web-repo') {
-        return {
-          repo,
-          anchors: [
-            { path: 'src/components/Button.tsx', type: 'component', reason: 'Reusable UI component source', selected: true },
-            { path: 'src/app/dashboard/page.tsx', type: 'ui-source', reason: 'Likely rendered UI surface', selected: true },
-            { path: 'src/styles/theme.css', type: 'theme', reason: 'Theme or token source', selected: true },
-          ],
-          generatedAt: now,
-        }
-      }
-      return { repo, ...repoSourceMap, generatedAt: now }
-    },
-    scanRepoDesignInventory: async (repoId, sourceMap = repoSourceMap) => {
-      const repo = repoFor(repoId)
-      const map = sourceMap?.anchors ? sourceMap : await window.designAPI.suggestRepoSources(repoId)
-      if (repo.id === 'web-repo') {
-        return resultFor(repo, map, {
-          inventoryRows: [
-            row('Component', 'Button', 'Button from @/components/Button', 12, ['src/app/dashboard/page.tsx'], 'Used component', { metadata: { importPath: '@/components/Button', sourceFile: 'src/components/Button.tsx', definitionFiles: ['src/components/Button.tsx'], previewable: true } }),
-            row('Icon', 'SettingsIcon', 'src/icons/settings.svg', 3, ['src/app/dashboard/page.tsx'], 'SVG asset', { metadata: { sourceFiles: ['src/icons/settings.svg'], kind: 'svg-asset', svg: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5" fill="currentColor"/></svg>' } }),
-            row('Token', '--brand-primary', '--brand-primary', 4, ['src/styles/theme.css'], 'CSS variable'),
-            row('Color', '--surface-900', '#101010', 2, ['src/styles/theme.css'], 'Color', { metadata: { tokenNames: ['--surface-900'] } }),
-            row('Class', 'flex items-center gap-2', 'flex items-center gap-2', 9, ['src/app/dashboard/page.tsx'], 'Repeated recipe'),
-            row('File', 'src/styles/theme.css', 'src/styles/theme.css', 1, ['src/styles/theme.css'], 'Theme source'),
-          ],
-        })
-      }
-      return resultFor(repo, map)
-    },
-    getComponentPreviewCandidates: async (_repoId, scanResult) => {
-      return (scanResult?.inventoryRows || []).filter(row => row.type === 'Component').map(row => ({
-        id: row.id,
-        name: row.name,
-        importPath: row.metadata?.importPath || '',
-        count: row.count,
-        files: row.files || [],
-        status: 'pending',
-      }))
-    },
-    renderComponentPreview: async (_repoId, row) => {
-      if (row.name === 'UserAvatar') {
-        return { status: 'Needs example', error: 'Preview needs user data props.', files: row.files || [] }
-      }
-      if (row.name === 'DropdownMenu') {
-        return { status: 'Needs interaction', error: 'This primitive needs an open-state example.', files: row.files || [] }
-      }
-      return {
-        status: 'Preview loading',
-        html: `<html><body style="margin:0;display:grid;place-items:center;height:100%;background:transparent;color:#ededed;font:13px system-ui"><button style="border:1px solid #454545;border-radius:6px;background:#202020;color:#ededed;padding:8px 12px">${row.name}</button><script>requestAnimationFrame(() => parent.postMessage({ type: 'component-preview-status', componentId: ${JSON.stringify(row.id)}, status: 'Preview' }, '*'))</script></body></html>`,
-        files: row.files || [],
-      }
+    renameHtmlFile:  async (oldPath, newName) => {
+      const f = mockFiles.find(f => f.path === oldPath)
+      if (!f) return null
+      const dir = oldPath.split('/').slice(0, -1).join('/')
+      const base = newName.endsWith('.html') ? newName : `${newName}.html`
+      const newPath = `${dir}/${base}`
+      f.name = base
+      f.path = newPath
+      return newPath
     },
   }
 })()

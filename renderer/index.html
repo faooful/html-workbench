@@ -3,13 +3,120 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; frame-src 'self' local-preview:; img-src 'self' data: local-preview:; font-src 'self' data: local-preview:; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; worker-src blob: 'self'" />
-    <title>Accidental Design System</title>
-  <link rel="stylesheet" href="app.css" />
+  <meta http-equiv="Content-Security-Policy" content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; frame-src *;" />
+  <title>HTML Workbench</title>
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div id="root"></div>
+  <div id="app" data-theme="dark" data-pane-mode="split">
+
+    <aside id="vault-rail">
+      <div id="traffic-spacer"></div>
+      <section class="vault-section">
+        <div class="section-label rail-section-head">
+          <span>Files</span>
+          <button id="new-doc-btn" class="icon-btn rail-new-btn" title="New HTML file" aria-label="New HTML file">＋</button>
+        </div>
+        <div id="doc-list"></div>
+      </section>
+    </aside>
+
+    <main id="workspace">
+      <header id="topbar">
+        <div class="doc-title-wrap">
+          <button id="sidebar-toggle" class="icon-btn" aria-label="Toggle sidebar">☰</button>
+          <div>
+            <h2 id="active-title">Untitled</h2>
+          </div>
+        </div>
+        <div id="topbar-actions">
+          <button id="command-btn" class="toolbar-btn">Search <kbd>⌘K</kbd></button>
+          <button id="theme-btn" class="toolbar-btn">Light</button>
+          <button id="save-btn" class="toolbar-btn">Save</button>
+          <button id="open-browser-btn" class="toolbar-btn accent">Open in browser</button>
+          <div class="more-menu">
+            <button id="more-actions-btn" class="toolbar-btn icon-toolbar" aria-haspopup="menu" aria-expanded="false" aria-label="More actions">⋯</button>
+            <div id="more-actions-menu" class="more-menu-popover hidden" role="menu">
+              <button id="copy-path-btn" role="menuitem">Copy path</button>
+              <button id="reveal-doc-btn" role="menuitem">Reveal in Finder</button>
+              <hr>
+              <button id="rename-doc-btn" role="menuitem">Rename file</button>
+              <button id="delete-doc-btn" role="menuitem">Delete file</button>
+              <hr>
+              <button id="choose-dir-btn" role="menuitem">Change watch folder…</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div id="pane-toolbar">
+        <div class="pane-title editor-title">
+          <span>HTML</span>
+          <button id="editor-full-btn" class="icon-btn" aria-label="Editor full width">↗</button>
+        </div>
+        <div class="pane-title preview-title">
+          <span>Render</span>
+          <button id="preview-full-btn" class="icon-btn" aria-label="Preview full width">↗</button>
+        </div>
+      </div>
+
+      <div id="splitter">
+        <section id="editor-pane" class="pane">
+          <div id="editor-shell">
+            <pre id="line-numbers" aria-hidden="true">1</pre>
+            <textarea id="html-editor" spellcheck="false" autocomplete="off" wrap="off" aria-label="HTML editor" placeholder="Paste or write HTML here…"></textarea>
+          </div>
+        </section>
+
+        <section id="preview-pane" class="pane">
+          <iframe id="preview-frame" title="HTML render"></iframe>
+        </section>
+      </div>
+
+      <footer id="statusbar">
+        <span id="save-state">Ready</span>
+        <span id="stats">Lines: 0</span>
+        <span id="watch-dir-label"></span>
+      </footer>
+    </main>
+  </div>
+
+  <!-- Command palette -->
+  <div id="palette" class="hidden">
+    <div id="palette-backdrop"></div>
+    <div id="palette-card">
+      <input id="palette-input" placeholder="Open file or run action…" autocomplete="off" spellcheck="false" />
+      <ul id="palette-list"></ul>
+      <div id="palette-footer">
+        <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
+        <span><kbd>↵</kbd> Run</span>
+        <span><kbd>Esc</kbd> Close</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- New file modal -->
+  <div id="new-doc-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="new-file-heading">
+    <div class="modal-backdrop"></div>
+    <form id="new-doc-form" class="modal-card">
+      <div class="modal-header">
+        <p class="eyebrow">New file</p>
+        <h2 id="new-file-heading">Create HTML file</h2>
+      </div>
+      <label>
+        <span>Title</span>
+        <input id="new-doc-title-input" type="text" autocomplete="off" placeholder="My Report" required />
+      </label>
+      <div class="modal-actions">
+        <button id="new-doc-cancel" type="button" class="toolbar-btn">Cancel</button>
+        <button type="submit" class="toolbar-btn primary">Create file</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="toast"></div>
+
   <script src="test-api.js"></script>
-  <script src="app.bundle.js"></script>
+  <script src="renderer.js"></script>
 </body>
 </html>

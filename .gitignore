@@ -6,6 +6,7 @@ node_modules/
 .prefs.json
 .design-sources.json
 .design-repos.json
+.html-workbench.json
 
 # Synced/generated plan data
 plans/*.md
@@ -19,9 +20,6 @@ design-docs/
 # Electron/package artifacts
 dist/
 out/
-renderer/app.bundle.js
-renderer/app.css
 *.log
 .ui-artifacts/
 test-results/
-playwright-report/
