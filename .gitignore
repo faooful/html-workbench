@@ -6,8 +6,11 @@ node_modules/
 .prefs.json
 .design-sources.json
 .design-repos.json
+html-files/*.html
+!html-files/.gitkeep
 
 # Synced/generated plan data
+plans/
 plans/*.md
 plans/*.comments.json
 plans/*.review.json

@@ -10,9 +10,24 @@ function extractHtmlTitle(content) {
 }
 
 function getLibraryDir() {
-  const dir = path.join(app.getPath('userData'), 'html-files')
+  const dir = path.join(__dirname, 'html-files')
   fs.mkdirSync(dir, { recursive: true })
   return dir
+}
+
+function migrateLegacyLibrary() {
+  try {
+    const legacyDir = path.join(app.getPath('userData'), 'html-files')
+    const libraryDir = getLibraryDir()
+    if (!fs.existsSync(legacyDir) || legacyDir === libraryDir) return
+
+    for (const name of fs.readdirSync(legacyDir)) {
+      if (!name.endsWith('.html') || name.startsWith('.')) continue
+      const source = path.join(legacyDir, name)
+      const target = path.join(libraryDir, name)
+      if (!fs.existsSync(target)) fs.copyFileSync(source, target)
+    }
+  } catch (_) {}
 }
 
 function createWindow() {
@@ -20,7 +35,7 @@ function createWindow() {
     width: 1440,
     height: 900,
     titleBarStyle: 'hiddenInset',
-    backgroundColor: '#2a2a2a',
+    backgroundColor: '#151515',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -28,10 +43,11 @@ function createWindow() {
       webviewTag: false,
     },
   })
-  mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'))
+  mainWindow.loadFile(path.join(__dirname, 'dist', 'renderer', 'index.html'))
 }
 
 app.whenReady().then(() => {
+  migrateLegacyLibrary()
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
