@@ -20,8 +20,8 @@ function App() {
     <main className="site-shell">
       <section className="copy-panel">
         <header className="site-nav">
-          <a className="brand-mark" href="/" aria-label="html-render home">
-            <span>hr</span>
+          <a className="brand-mark" href="/" aria-label="html.workbench home">
+            <span>html.workbench</span>
           </a>
           <nav aria-label="Primary navigation">
             <a className="github-link" href="https://github.com/faooful/html-workbench" target="_blank" rel="noreferrer">
