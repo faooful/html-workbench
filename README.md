@@ -8,15 +8,15 @@ The project also includes a small marketing website entry for `html-render`, whi
 
 ### Side-by-side HTML editing
 
-[Watch the editor and live preview demo](src/assets/html-render-editor.mp4)
+<video src="https://github.com/faooful/html-workbench/raw/main/src/assets/html-render-editor.mp4" controls muted loop playsinline width="100%"></video>
 
 ### Sync scrolling between source and preview
 
-[Watch the sync scrolling demo](src/assets/html-render-sync-scroll.mp4)
+<video src="https://github.com/faooful/html-workbench/raw/main/src/assets/html-render-sync-scroll.mp4" controls muted loop playsinline width="100%"></video>
 
 ### Local HTML library workflow
 
-[Watch the local file workflow demo](src/assets/html-render-new-file.mp4)
+<video src="https://github.com/faooful/html-workbench/raw/main/src/assets/html-render-new-file.mp4" controls muted loop playsinline width="100%"></video>
 
 ## What It Does
 
