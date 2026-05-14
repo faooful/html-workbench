@@ -43,7 +43,7 @@ function createWindow() {
       webviewTag: false,
     },
   })
-  mainWindow.loadFile(path.join(__dirname, 'dist', 'renderer', 'index.html'))
+  mainWindow.loadFile(path.join(__dirname, 'dist', 'renderer', 'app.html'))
 }
 
 app.whenReady().then(() => {

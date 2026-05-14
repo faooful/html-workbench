@@ -319,11 +319,17 @@ function App() {
   const [newOpen, setNewOpen] = React.useState(false)
   const [newTitle, setNewTitle] = React.useState("")
   const [toast, setToast] = React.useState("")
+  const [syncScroll, setSyncScroll] = React.useState(prefs.syncScrollEnabled !== false)
   const [slash, setSlash] = React.useState<{ open: boolean; start: number; index: number; items: SlashCommand[] }>({ open: false, start: -1, index: 0, items: [] })
   const slashRef = React.useRef(slash)
   const editorRef = React.useRef<HTMLTextAreaElement | null>(null)
+  const previewRef = React.useRef<HTMLIFrameElement | null>(null)
   const lineRef = React.useRef<HTMLPreElement | null>(null)
   const saveTimer = React.useRef<number | null>(null)
+  const syncScrollRef = React.useRef(syncScroll)
+  const scrollSyncSource = React.useRef<"editor" | "preview" | null>(null)
+  const scrollSyncTimer = React.useRef<number | null>(null)
+  const previewScrollCleanup = React.useRef<(() => void) | null>(null)
   const paletteItemRefs = React.useRef(new Map<string, HTMLButtonElement>())
 
   const activeFile = files.find(file => file.path === activePath)
@@ -340,6 +346,10 @@ function App() {
     setPaletteQuery("")
     setPaletteIndex(0)
   }, [paletteOpen])
+
+  React.useEffect(() => {
+    syncScrollRef.current = syncScroll
+  }, [syncScroll])
 
   const showToast = React.useCallback((message: string) => {
     setToast(message)
@@ -385,6 +395,10 @@ function App() {
   React.useEffect(() => {
     document.documentElement.dataset.theme = theme
   }, [theme])
+
+  React.useEffect(() => {
+    updatePreviewDocument()
+  }, [content, theme])
 
   React.useEffect(() => {
     let live = true
@@ -447,7 +461,11 @@ function App() {
       }
     }
     document.addEventListener("keydown", onKey)
-    return () => document.removeEventListener("keydown", onKey)
+    return () => {
+      document.removeEventListener("keydown", onKey)
+      previewScrollCleanup.current?.()
+      if (scrollSyncTimer.current) window.clearTimeout(scrollSyncTimer.current)
+    }
   }, [saveNow, showToast])
 
   function updateContent(next: string) {
@@ -455,6 +473,80 @@ function App() {
     setDirty(true)
     setSaveLabel("Unsaved")
     window.setTimeout(updateSlashMenu, 0)
+  }
+
+  function markScrollSyncSource(source: "editor" | "preview") {
+    scrollSyncSource.current = source
+    if (scrollSyncTimer.current) window.clearTimeout(scrollSyncTimer.current)
+    scrollSyncTimer.current = window.setTimeout(() => {
+      scrollSyncSource.current = null
+    }, 80)
+  }
+
+  function scrollRatio(element: { scrollTop: number; scrollHeight: number; clientHeight: number }) {
+    const max = element.scrollHeight - element.clientHeight
+    return max > 0 ? element.scrollTop / max : 0
+  }
+
+  function getPreviewScroller() {
+    const doc = previewRef.current?.contentDocument
+    return (doc?.scrollingElement || doc?.documentElement || doc?.body) as HTMLElement | null
+  }
+
+  function updatePreviewDocument() {
+    const doc = previewRef.current?.contentDocument
+    if (!doc?.head || !doc.body) return
+
+    const currentRatio = scrollRatio(getPreviewScroller() || doc.documentElement)
+    const parsed = new DOMParser().parseFromString(buildPreviewSrcdoc(content, theme), "text/html")
+    doc.head.replaceChildren(...Array.from(parsed.head.childNodes, node => doc.importNode(node, true)))
+    doc.body.replaceChildren(...Array.from(parsed.body.childNodes, node => doc.importNode(node, true)))
+
+    window.requestAnimationFrame(() => {
+      const scroller = getPreviewScroller()
+      if (!scroller) return
+      const max = scroller.scrollHeight - scroller.clientHeight
+      scroller.scrollTop = max > 0 ? currentRatio * max : 0
+    })
+  }
+
+  function syncPreviewFromEditor(editor: HTMLTextAreaElement) {
+    if (!syncScrollRef.current) return
+    const scroller = getPreviewScroller()
+    if (!scroller) return
+    markScrollSyncSource("editor")
+    const max = scroller.scrollHeight - scroller.clientHeight
+    scroller.scrollTop = max > 0 ? scrollRatio(editor) * max : 0
+  }
+
+  function syncEditorFromPreview() {
+    if (!syncScrollRef.current) return
+    const editor = editorRef.current
+    const scroller = getPreviewScroller()
+    if (!editor || !scroller) return
+    markScrollSyncSource("preview")
+    const max = editor.scrollHeight - editor.clientHeight
+    editor.scrollTop = max > 0 ? scrollRatio(scroller) * max : 0
+    if (lineRef.current) lineRef.current.scrollTop = editor.scrollTop
+  }
+
+  function handleEditorScroll(event: React.UIEvent<HTMLTextAreaElement>) {
+    if (lineRef.current) lineRef.current.scrollTop = event.currentTarget.scrollTop
+    if (!syncScrollRef.current || scrollSyncSource.current === "preview") return
+    syncPreviewFromEditor(event.currentTarget)
+  }
+
+  function handlePreviewLoad() {
+    previewScrollCleanup.current?.()
+    updatePreviewDocument()
+    if (editorRef.current) syncPreviewFromEditor(editorRef.current)
+    const win = previewRef.current?.contentWindow
+    if (!win) return
+    const onPreviewScroll = () => {
+      if (syncScrollRef.current && scrollSyncSource.current !== "editor") syncEditorFromPreview()
+    }
+    win.addEventListener("scroll", onPreviewScroll, { passive: true })
+    previewScrollCleanup.current = () => win.removeEventListener("scroll", onPreviewScroll)
   }
 
   function commandMatches(command: SlashCommand, query: string) {
@@ -928,7 +1020,7 @@ function App() {
                 onKeyDown={handleEditorKeyDown}
                 onClick={() => window.setTimeout(updateSlashMenu, 0)}
                 onKeyUp={() => window.setTimeout(updateSlashMenu, 0)}
-                onScroll={event => { if (lineRef.current) lineRef.current.scrollTop = event.currentTarget.scrollTop }}
+                onScroll={handleEditorScroll}
                 aria-label="HTML editor"
                 placeholder="Paste or write HTML here..."
               />
@@ -957,7 +1049,12 @@ function App() {
             )}
           </section>
           <section className="preview-pane">
-            <iframe className="preview-frame" title="HTML render" srcDoc={buildPreviewSrcdoc(content, theme)} />
+            <iframe
+              ref={previewRef}
+              className="preview-frame"
+              title="HTML render"
+              onLoad={handlePreviewLoad}
+            />
           </section>
         </div>
 
@@ -971,6 +1068,10 @@ function App() {
             <label className="autosave-toggle">
               <input type="checkbox" checked={autosave} onChange={event => { setAutosave(event.target.checked); setPrefs({ autosaveEnabled: event.target.checked }) }} />
               <span>Autosave</span>
+            </label>
+            <label className="autosave-toggle">
+              <input type="checkbox" checked={syncScroll} onChange={event => { setSyncScroll(event.target.checked); setPrefs({ syncScrollEnabled: event.target.checked }) }} />
+              <span>Sync scroll</span>
             </label>
             <button className="control-button" type="button" onClick={cycleDelay}>{Math.round(autosaveDelay / 1000)}s</button>
           </div>

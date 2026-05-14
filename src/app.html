@@ -3,11 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>html-render</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; frame-src *;" />
+    <title>HTML Workbench</title>
     <link rel="icon" href="data:," />
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/website.tsx"></script>
+    <script type="module" src="/main.tsx"></script>
   </body>
 </html>
